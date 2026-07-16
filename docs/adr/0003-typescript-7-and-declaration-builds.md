@@ -22,12 +22,32 @@ calls `useCaseSensitiveFileNames` on the TypeScript API. Under TS 7 that is
 Adopt TypeScript 7 repo-wide, pinned in the `catalog:` block of
 `pnpm-workspace.yaml`.
 
-Split the build in every library package:
+Split the build by package kind:
+
+**Framework-free domain packages** (`shared`, `timeline`, `subtitle-engine`, …)
+bundle with tsup and emit declarations with tsc:
 
 - **JavaScript** — `tsup` (esbuild). Fast, and TS-version-independent.
 - **Declarations** — `tsc --emitDeclarationOnly`. `dts: false` in tsup configs.
 
-So a library `build` script is `tsup && tsc --emitDeclarationOnly`.
+So their `build` script is `tsup && tsc --emitDeclarationOnly`.
+
+**React packages** (`ui`) build with **`tsc` alone — no bundler.**
+
+This is not a stylistic preference. esbuild strips `'use client'` directives
+during bundling, and Next's App Router depends on them: without the directive,
+`ThemeProvider` is treated as a server component and throws on `useState`.
+Verified empirically — the directive was absent from the tsup bundle and
+present in tsc's per-file output.
+
+The alternative, a bundle-wide `'use client'` banner, would work but is wrong:
+it marks the entire package client-only, so pure helpers like `cn()` could no
+longer be imported from a server component on the landing page. tsc's per-file
+emit puts the directive exactly where it belongs — on `button.js` and
+`theme-provider.js`, and not on `cn.js`.
+
+Unbundled output is also better for consumers: Next tree-shakes per-module, so
+a page importing one component does not pull the whole design system.
 
 ## Consequences
 
@@ -49,5 +69,9 @@ So a library `build` script is `tsup && tsc --emitDeclarationOnly`.
   contained: pin `typescript: 5.9.x` in the catalog and nothing else changes,
   because no source code depends on TS 7 semantics.
 
-**Rule:** do not re-enable `dts: true` in a tsup config. It will appear to be a
-simplification and will fail at build time.
+**Two rules that will look like cleanups to a future contributor, and are not:**
+
+1. Do not re-enable `dts: true` in a tsup config. It fails at build time.
+2. Do not add a bundler to `packages/ui`. It will strip `'use client'` and
+   break the App Router at runtime — which typechecks and passes unit tests,
+   so it fails late and confusingly.

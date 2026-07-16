@@ -1,0 +1,360 @@
+/**
+ * VideoDip design tokens.
+ *
+ * ============================================================================
+ * THIS FILE IS THE ONLY PLACE IN THE REPOSITORY WHERE A LITERAL COLOR MAY
+ * APPEAR. Everywhere else, use the semantic tokens defined below.
+ * ============================================================================
+ *
+ * Two layers, and the distinction is the whole point:
+ *
+ *   1. PRIMITIVES  — raw values. `--color-zinc-900`. Describe what they ARE.
+ *                    Never referenced by a component. Ever.
+ *   2. SEMANTIC    — roles. `--color-surface-raised`. Describe what they are
+ *                    FOR. This is the only layer components may touch.
+ *
+ * Why bother: roles survive a redesign, values don't. When we retheme, every
+ * primitive changes and not one component does. A component that reaches past
+ * the semantic layer to `zinc-900` pins us to that redesign forever and breaks
+ * light mode silently — which is why `CLAUDE.md` makes this a hard rule rather
+ * than a preference.
+ *
+ * Colors are OKLCH: perceptually uniform, so a lightness step looks like the
+ * same step across every hue. That is what keeps the palette feeling like one
+ * system instead of assorted colors, and it makes the WCAG contrast targets
+ * below predictable rather than a per-pair guessing game.
+ *
+ * Dark is the default (`:root`). Light is an override, not an afterthought.
+ */
+
+@import 'tailwindcss';
+
+/* Tailwind v4 drives dark mode off a class rather than the OS media query,
+   because the app has an explicit theme switcher and the editor must be able
+   to stay dark on a light-themed OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* ==========================================================================
+     PRIMITIVES — raw values. Do not use these in components.
+     ========================================================================== */
+
+  /* Neutrals. A cool-tinted gray ramp; pure grays read as cheap next to
+     video content, and a slight blue cast is what reads as "premium" in
+     Linear/Arc/Raycast. */
+  --color-neutral-0: oklch(100% 0 0);
+  --color-neutral-50: oklch(98.5% 0.002 260);
+  --color-neutral-100: oklch(96.5% 0.004 260);
+  --color-neutral-200: oklch(92% 0.006 260);
+  --color-neutral-300: oklch(85% 0.008 260);
+  --color-neutral-400: oklch(70% 0.012 260);
+  --color-neutral-500: oklch(56% 0.014 260);
+  --color-neutral-600: oklch(44% 0.014 260);
+  --color-neutral-700: oklch(33% 0.013 260);
+  --color-neutral-800: oklch(24% 0.012 260);
+  --color-neutral-850: oklch(20% 0.011 260);
+  --color-neutral-900: oklch(16% 0.010 260);
+  --color-neutral-950: oklch(11% 0.008 260);
+  --color-neutral-1000: oklch(7% 0.006 260);
+
+  /* Brand. Violet — distinct from the blue every dev tool defaults to, and
+     it holds saturation against video thumbnails. */
+  --color-brand-300: oklch(82% 0.11 295);
+  --color-brand-400: oklch(74% 0.16 295);
+  --color-brand-500: oklch(66% 0.21 295);
+  --color-brand-600: oklch(58% 0.23 295);
+  --color-brand-700: oklch(50% 0.21 295);
+
+  /* Status. */
+  --color-success-400: oklch(78% 0.16 155);
+  --color-success-500: oklch(68% 0.18 155);
+  --color-warning-400: oklch(82% 0.16 75);
+  --color-warning-500: oklch(74% 0.18 75);
+  --color-danger-400: oklch(70% 0.19 25);
+  --color-danger-500: oklch(62% 0.22 25);
+  --color-info-400: oklch(76% 0.13 235);
+  --color-info-500: oklch(66% 0.16 235);
+
+  /* Timeline track hues. Tracks are identified by color at a glance, so these
+     are deliberately spread around the wheel at constant lightness/chroma —
+     equal visual weight, no track shouting over another. */
+  --color-track-video: oklch(66% 0.15 250);
+  --color-track-audio: oklch(66% 0.15 155);
+  --color-track-subtitle: oklch(66% 0.15 295);
+  --color-track-overlay: oklch(66% 0.15 35);
+  --color-track-effect: oklch(66% 0.15 195);
+
+  /* ==========================================================================
+     TYPOGRAPHY
+     Font FAMILIES are tokens too — never hardcode a font stack. The var()
+     indirection lets the desktop app inject a bundled font and the web app
+     use a CDN-loaded one without either knowing about the other.
+     ========================================================================== */
+  --font-sans: var(--vd-font-sans, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif);
+  --font-mono: var(--vd-font-mono, ui-monospace, 'Cascadia Code', 'Fira Code', monospace);
+  --font-display: var(--vd-font-display, var(--font-sans));
+
+  /* Type scale. Ratio ~1.2 at body sizes, loosening toward display, so
+     headlines can go large (per the landing-page brief) without the body
+     text dragging along with them. */
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
+  --text-4xl: 3rem;
+  --text-5xl: 4rem;
+  --text-6xl: 5.25rem;
+
+  /* Desktop UI wants a smaller base than the web default of 16px; VS Code and
+     Linear both sit near 13-14px. --text-base is 14px for that reason. */
+
+  --tracking-tighter: -0.04em;
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.02em;
+
+  --leading-tight: 1.15;
+  --leading-snug: 1.35;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* ==========================================================================
+     SPACING — 4px base grid. Never hardcode a spacing value.
+     ========================================================================== */
+  --spacing: 0.25rem;
+
+  /* ==========================================================================
+     RADIUS — rounded, per the design brief.
+     ========================================================================== */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+  --radius-full: 9999px;
+
+  /* ==========================================================================
+     MOTION
+     Durations and easings are tokens so `prefers-reduced-motion` can zero them
+     globally (see index.css) rather than every component handling it.
+     ========================================================================== */
+  --ease-out-quad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-quad: cubic-bezier(0.45, 0, 0.55, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --duration-instant: 50ms;
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 320ms;
+  --duration-slower: 500ms;
+
+  /* ==========================================================================
+     Z-INDEX — named layers. Never write a magic z-index number.
+     ========================================================================== */
+  --z-base: 0;
+  --z-timeline-playhead: 10;
+  --z-sticky: 100;
+  --z-dropdown: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-popover: 500;
+  --z-toast: 600;
+  --z-tooltip: 700;
+}
+
+/* ============================================================================
+   SEMANTIC TOKENS — DARK (default)
+   Components use ONLY these.
+   ============================================================================ */
+:root,
+.dark {
+  color-scheme: dark;
+
+  /* Surfaces, ordered by elevation. `sunken` is for wells (the timeline
+     ruler); `raised` for panels; `overlay` for floating UI. */
+  --color-surface-sunken: var(--color-neutral-1000);
+  --color-surface-base: var(--color-neutral-950);
+  --color-surface-raised: var(--color-neutral-900);
+  --color-surface-overlay: var(--color-neutral-850);
+  --color-surface-inset: var(--color-neutral-800);
+
+  /* Interaction states, applied over any surface. */
+  --color-surface-hover: oklch(100% 0 0 / 4%);
+  --color-surface-active: oklch(100% 0 0 / 8%);
+  --color-surface-selected: oklch(66% 0.21 295 / 16%);
+
+  /* Text. `primary` hits ~15:1 on surface-base, `secondary` ~7:1,
+     `tertiary` ~4.6:1 — all at or above WCAG AA. `disabled` intentionally
+     fails AA: it must read as unavailable, and it never carries information
+     that isn't available elsewhere. */
+  --color-text-primary: var(--color-neutral-50);
+  --color-text-secondary: var(--color-neutral-300);
+  --color-text-tertiary: var(--color-neutral-400);
+  --color-text-disabled: var(--color-neutral-600);
+  --color-text-inverse: var(--color-neutral-950);
+  --color-text-on-brand: var(--color-neutral-0);
+
+  /* Borders. `subtle` is nearly invisible by design — structure should come
+     from elevation, not outlines. */
+  --color-border-subtle: oklch(100% 0 0 / 6%);
+  --color-border-default: oklch(100% 0 0 / 10%);
+  --color-border-strong: oklch(100% 0 0 / 18%);
+  --color-border-focus: var(--color-brand-400);
+
+  /* Brand roles. */
+  --color-accent: var(--color-brand-500);
+  --color-accent-hover: var(--color-brand-400);
+  --color-accent-active: var(--color-brand-600);
+  --color-accent-subtle: oklch(66% 0.21 295 / 14%);
+
+  /* Status roles. */
+  --color-success: var(--color-success-500);
+  --color-success-subtle: oklch(68% 0.18 155 / 14%);
+  --color-warning: var(--color-warning-500);
+  --color-warning-subtle: oklch(74% 0.18 75 / 14%);
+  --color-danger: var(--color-danger-500);
+  --color-danger-subtle: oklch(62% 0.22 25 / 14%);
+  --color-info: var(--color-info-500);
+  --color-info-subtle: oklch(66% 0.16 235 / 14%);
+
+  /* Editor-specific roles. The video canvas is pure black regardless of theme:
+     it is a viewing environment, not a UI surface, and any tint misrepresents
+     the footage the creator is grading. */
+  --color-canvas: oklch(0% 0 0);
+  --color-timeline-playhead: var(--color-danger-400);
+  --color-timeline-grid: oklch(100% 0 0 / 5%);
+  --color-timeline-waveform: oklch(66% 0.15 155 / 70%);
+
+  /* Shadows. Dark UI gets depth from contrast rather than cast shadows, so
+     these stay tight and dark; a large soft shadow just muddies a dark
+     surface. */
+  --shadow-xs: 0 1px 2px 0 oklch(0% 0 0 / 40%);
+  --shadow-sm: 0 2px 4px -1px oklch(0% 0 0 / 45%);
+  --shadow-md: 0 4px 12px -2px oklch(0% 0 0 / 50%);
+  --shadow-lg: 0 12px 32px -8px oklch(0% 0 0 / 60%);
+  --shadow-xl: 0 24px 64px -12px oklch(0% 0 0 / 70%);
+  --shadow-glow: 0 0 24px -4px oklch(66% 0.21 295 / 40%);
+
+  /* Glassmorphism, per the landing-page brief. */
+  --glass-bg: oklch(16% 0.010 260 / 60%);
+  --glass-border: oklch(100% 0 0 / 8%);
+  --glass-blur: 16px;
+}
+
+/* ============================================================================
+   SEMANTIC TOKENS — LIGHT
+   Same role names, different values. Not an afterthought: every role defined
+   above is redefined here. A missing role would silently inherit the dark
+   value and be invisible.
+   ============================================================================ */
+.light {
+  color-scheme: light;
+
+  --color-surface-sunken: var(--color-neutral-100);
+  --color-surface-base: var(--color-neutral-50);
+  --color-surface-raised: var(--color-neutral-0);
+  --color-surface-overlay: var(--color-neutral-0);
+  --color-surface-inset: var(--color-neutral-100);
+
+  --color-surface-hover: oklch(0% 0 0 / 4%);
+  --color-surface-active: oklch(0% 0 0 / 7%);
+  --color-surface-selected: oklch(66% 0.21 295 / 12%);
+
+  --color-text-primary: var(--color-neutral-950);
+  --color-text-secondary: var(--color-neutral-700);
+  --color-text-tertiary: var(--color-neutral-500);
+  --color-text-disabled: var(--color-neutral-400);
+  --color-text-inverse: var(--color-neutral-50);
+  --color-text-on-brand: var(--color-neutral-0);
+
+  --color-border-subtle: oklch(0% 0 0 / 6%);
+  --color-border-default: oklch(0% 0 0 / 12%);
+  --color-border-strong: oklch(0% 0 0 / 20%);
+  --color-border-focus: var(--color-brand-600);
+
+  /* Brand shifts one step darker in light mode: --color-brand-500 on white
+     lands under 4.5:1 for text, so the accent role must not reuse it. */
+  --color-accent: var(--color-brand-600);
+  --color-accent-hover: var(--color-brand-500);
+  --color-accent-active: var(--color-brand-700);
+  --color-accent-subtle: oklch(66% 0.21 295 / 10%);
+
+  --color-success: oklch(52% 0.16 155);
+  --color-success-subtle: oklch(68% 0.18 155 / 12%);
+  --color-warning: oklch(58% 0.15 75);
+  --color-warning-subtle: oklch(74% 0.18 75 / 14%);
+  --color-danger: oklch(52% 0.21 25);
+  --color-danger-subtle: oklch(62% 0.22 25 / 10%);
+  --color-info: oklch(52% 0.15 235);
+  --color-info-subtle: oklch(66% 0.16 235 / 12%);
+
+  /* Still black. See the note in the dark block. */
+  --color-canvas: oklch(0% 0 0);
+  --color-timeline-playhead: oklch(55% 0.22 25);
+  --color-timeline-grid: oklch(0% 0 0 / 6%);
+  --color-timeline-waveform: oklch(52% 0.16 155 / 70%);
+
+  --shadow-xs: 0 1px 2px 0 oklch(0% 0 0 / 5%);
+  --shadow-sm: 0 2px 4px -1px oklch(0% 0 0 / 7%);
+  --shadow-md: 0 4px 12px -2px oklch(0% 0 0 / 9%);
+  --shadow-lg: 0 12px 32px -8px oklch(0% 0 0 / 12%);
+  --shadow-xl: 0 24px 64px -12px oklch(0% 0 0 / 16%);
+  --shadow-glow: 0 0 24px -4px oklch(58% 0.23 295 / 30%);
+
+  --glass-bg: oklch(100% 0 0 / 70%);
+  --glass-border: oklch(0% 0 0 / 6%);
+  --glass-blur: 16px;
+}
+
+/* Expose the semantic layer to Tailwind's utility generator, so `bg-surface-raised`
+   and `text-text-secondary` exist as classes. Only semantic roles are mapped —
+   primitives are deliberately absent, which makes `bg-neutral-900` fail to
+   compile rather than fail in review. */
+@theme inline {
+  --color-surface-sunken: var(--color-surface-sunken);
+  --color-surface-base: var(--color-surface-base);
+  --color-surface-raised: var(--color-surface-raised);
+  --color-surface-overlay: var(--color-surface-overlay);
+  --color-surface-inset: var(--color-surface-inset);
+  --color-surface-hover: var(--color-surface-hover);
+  --color-surface-active: var(--color-surface-active);
+  --color-surface-selected: var(--color-surface-selected);
+
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-tertiary: var(--color-text-tertiary);
+  --color-text-disabled: var(--color-text-disabled);
+  --color-text-inverse: var(--color-text-inverse);
+  --color-text-on-brand: var(--color-text-on-brand);
+
+  --color-border-subtle: var(--color-border-subtle);
+  --color-border-default: var(--color-border-default);
+  --color-border-strong: var(--color-border-strong);
+  --color-border-focus: var(--color-border-focus);
+
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-active: var(--color-accent-active);
+  --color-accent-subtle: var(--color-accent-subtle);
+
+  --color-success: var(--color-success);
+  --color-success-subtle: var(--color-success-subtle);
+  --color-warning: var(--color-warning);
+  --color-warning-subtle: var(--color-warning-subtle);
+  --color-danger: var(--color-danger);
+  --color-danger-subtle: var(--color-danger-subtle);
+  --color-info: var(--color-info);
+  --color-info-subtle: var(--color-info-subtle);
+
+  --color-canvas: var(--color-canvas);
+  --color-timeline-playhead: var(--color-timeline-playhead);
+  --color-timeline-grid: var(--color-timeline-grid);
+  --color-timeline-waveform: var(--color-timeline-waveform);
+}
