@@ -1,0 +1,31 @@
+{
+  "name": "videodip",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open-source, offline-first AI video editing toolkit for short-form creators.",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@10.26.2",
+  "engines": {
+    "node": ">=22.11.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:watch": "turbo run test:watch",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json,yaml,yml,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,md,json,yaml,yml,css}\"",
+    "clean": "turbo run clean && rimraf node_modules",
+    "verify": "turbo run typecheck lint test"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "prettier": "catalog:",
+    "rimraf": "6.1.2",
+    "turbo": "catalog:",
+    "typescript": "catalog:"
+  }
+}

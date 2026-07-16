@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+
+    /* AbortSignal is a host API, not part of the ES2023 lib. We pull it from
+       @types/node rather than adding "DOM" to lib, because this package is
+       consumed by Node workers as well as the browser and must not gain
+       `window`/`document` in its type surface. */
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+}
