@@ -1,37 +1,208 @@
-# Dependencies
+# =============================================================================
+# VideoDip — .gitignore
+#
+# This repository is PUBLIC. Everything below is either machine-specific, huge,
+# or a credential. When adding a rule, prefer ignoring a whole directory over
+# chasing individual file extensions — the failure mode we care about is the
+# file nobody predicted.
+#
+# This file is a safety net, not a strategy. Real secrets belong in a secret
+# manager or the deploy environment, never in the working tree. See SECURITY.md.
+# =============================================================================
+
+# --- Dependencies ------------------------------------------------------------
 node_modules/
 .pnpm-store/
+.yarn/
 
-# Build output
+# --- Build output ------------------------------------------------------------
 dist/
 out/
 build/
 .next/
 .turbo/
 *.tsbuildinfo
+storybook-static/
 
-# Rust / Tauri
+# --- Rust / Tauri ------------------------------------------------------------
 target/
 apps/desktop/src-tauri/gen/
 
-# Test
+# --- Test / coverage ---------------------------------------------------------
 coverage/
+.nyc_output/
+test-results/
+playwright-report/
 
-# Environment
+# =============================================================================
+# SECRETS AND CREDENTIALS
+# Nothing in this section should ever reach a public remote.
+# =============================================================================
+
+# --- Environment files -------------------------------------------------------
+# .env.example is the ONLY env file that is committed. It must contain
+# placeholders only — never a real value, not even a "temporary" one.
 .env
 .env.*
 !.env.example
+*.env
+env.json
 
-# Editor / OS
-.DS_Store
-Thumbs.db
-.idea/
-*.swp
+# --- Private keys, certificates, signing material ----------------------------
+*.pem
+*.key
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.der
+*.crt
+*.cer
+*.asc
+*.gpg
+*.pgp
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+*.ppk
+known_hosts
 
-# VideoDip runtime artifacts
-# Local media, render caches and AI models are large and machine-specific.
-/tmp/
+# --- Tauri update signing ----------------------------------------------------
+# The private key signs auto-updates. Leaking it lets anyone ship a malicious
+# update to every VideoDip install. Treat as the highest-value secret here.
+*.tauri-key
+*.tauri-key.pub
+.tauri/
+tauri-private.key
+
+# --- Cloud / deploy credentials (VPS, CI, registries) ------------------------
+.aws/
+.azure/
+.gcloud/
+gcloud-service-key.json
+*service-account*.json
+*credentials*.json
+!**/tsconfig*.json
+.npmrc.local
+.pypirc
+.netrc
+ansible-vault-pass*
+inventory.ini
+deploy.sh.local
+*.retry
+
+# --- Secret-ish odds and ends ------------------------------------------------
+secrets/
+.secrets/
+*.secret
+*.secrets
+**/config.local.*
+
+# =============================================================================
+# USER DATA AND LARGE ARTIFACTS
+# VideoDip is offline-first: real user media lands in the working tree during
+# development. None of it belongs in git, and much of it is someone's private
+# footage.
+# =============================================================================
+
+# --- VideoDip project archives and runtime caches ----------------------------
 *.videodip
-models/
 .cache/
 previews/
+renders/
+exports/
+projects/
+/tmp/
+tmp/
+
+# --- AI models ---------------------------------------------------------------
+# Whisper weights are hundreds of MB to multiple GB. Downloaded at runtime,
+# never vendored.
+models/
+*.bin
+*.pt
+*.pth
+*.onnx
+*.gguf
+*.ggml
+*.safetensors
+whisper-models/
+
+# --- Local databases ---------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# --- Media -------------------------------------------------------------------
+# Ignored by default because dev media is user footage. Committed sample assets
+# must be deliberate: place them in assets/samples/, which is excepted below.
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.webm
+*.wmv
+*.flv
+*.mp3
+*.wav
+*.aac
+*.flac
+*.m4a
+*.ogg
+*.srt
+*.vtt
+*.ass
+!assets/samples/**
+
+# --- Bundled binaries --------------------------------------------------------
+# FFmpeg and Whisper binaries are fetched per-platform at build time.
+bin/
+vendor/
+ffmpeg.exe
+ffprobe.exe
+*.dll
+*.dylib
+*.so
+
+# =============================================================================
+# LOCAL TOOLING AND EDITOR STATE
+# =============================================================================
+
+# --- Agent / editor local config ---------------------------------------------
+# settings.local.json holds machine-specific paths and tool permissions.
+.claude/settings.local.json
+.claude/**/*.local.json
+.cursor/
+.aider*
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+.idea/
+
+# --- Internal planning documents ---------------------------------------------
+# Superseded by README.md, CLAUDE.md and docs/adr/. Kept locally for reference;
+# not published, because stale specs that contradict the code cost contributors
+# more than they help.
+*.docx
+*.doc
+*.pdf
+!docs/**/*.pdf
+
+# --- OS / editor noise -------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.history/
+
+# --- Logs --------------------------------------------------------------------
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*

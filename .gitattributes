@@ -1,0 +1,37 @@
+# Normalize line endings.
+#
+# Development happens on Windows, CI runs on Linux, and Tauri builds on all
+# three. Without this, checkouts differ by platform and every file churns in
+# diffs for reasons unrelated to the change.
+* text=auto eol=lf
+
+# Windows-only files that genuinely require CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary: never normalize, never diff as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.mp4 binary
+*.mov binary
+*.webm binary
+*.wav binary
+*.mp3 binary
+*.docx binary
+*.pdf binary
+
+# Generated. Collapse in PR diffs and exclude from language stats.
+pnpm-lock.yaml linguist-generated=true -diff
+*.d.ts linguist-generated=true
+
+# Vendored license text should not count as our code.
+LICENSE linguist-vendored=true

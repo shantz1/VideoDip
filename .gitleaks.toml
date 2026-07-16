@@ -1,0 +1,25 @@
+# Gitleaks configuration.
+#
+# Extends the upstream default ruleset rather than replacing it — the defaults
+# cover the credential formats that actually leak (AWS, GitHub, Stripe, private
+# keys), and re-deriving them by hand would only lose coverage.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Paths whose 'secrets' are deliberate placeholders"
+
+paths = [
+  # Placeholders only, by policy. See the header of the file itself.
+  '''\.env\.example$''',
+  # Documents secret handling; necessarily contains secret-shaped examples.
+  '''SECURITY\.md$''',
+  # Integrity hashes look like high-entropy strings to every scanner.
+  '''pnpm-lock\.yaml$''',
+]
+
+regexes = [
+  # Our own placeholder convention. Anything real must never match this.
+  '''replace-me[\w-]*''',
+]
