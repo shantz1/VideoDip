@@ -10,6 +10,8 @@ export interface EmptyStateProps {
   /** Optional call to action. Omit when there is nothing useful to do yet. */
   readonly action?: string;
   readonly onAction?: () => void;
+  /** Keeps async empty-state actions focusable while work is in progress. */
+  readonly actionLoading?: boolean;
   readonly className?: string;
 }
 
@@ -26,12 +28,11 @@ export function EmptyState({
   description,
   action,
   onAction,
+  actionLoading = false,
   className,
 }: EmptyStateProps) {
   return (
-    <div
-      className={cn('flex flex-col items-center px-4 py-10 text-center', className)}
-    >
+    <div className={cn('flex flex-col items-center px-4 py-10 text-center', className)}>
       <div
         className={cn(
           'mb-3 grid size-10 place-items-center rounded-lg',
@@ -43,12 +44,16 @@ export function EmptyState({
       </div>
 
       <p className="text-sm font-medium text-text-primary">{title}</p>
-      <p className="mt-1 max-w-[24ch] text-xs leading-relaxed text-text-tertiary">
-        {description}
-      </p>
+      <p className="mt-1 max-w-[24ch] text-xs leading-relaxed text-text-tertiary">{description}</p>
 
       {action && (
-        <Button variant="secondary" size="sm" className="mt-4" onClick={onAction}>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="mt-4"
+          loading={actionLoading}
+          onClick={onAction}
+        >
           {action}
         </Button>
       )}

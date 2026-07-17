@@ -1,30 +1,33 @@
 'use client';
 
-import { ms } from '@videodip/shared';
-import { getDuration } from '@videodip/timeline';
+import { ms, type Milliseconds } from '@videodip/shared';
+import { getDuration, type Clip, type TrimEdge } from '@videodip/timeline';
 import { Button, cn } from '@videodip/ui';
 import { Magnet, Scissors, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
+import { useRef, useState, type PointerEvent } from 'react';
 import { useEditorStore } from '../editor.store';
 import { formatTimecode } from '../lib/timecode';
+import { snapTimelineTime } from '../lib/timeline-snap';
 import { useProjectStore } from '../project.store';
 
 /** Track rows, colored by the `--color-track-*` tokens. */
 const TRACKS = [
-  { id: 'video', label: 'Video', color: 'bg-[--color-track-video]' },
   { id: 'subtitle', label: 'Subtitles', color: 'bg-[--color-track-subtitle]' },
+  { id: 'video', label: 'Video', color: 'bg-[--color-track-video]' },
   { id: 'audio', label: 'Audio', color: 'bg-[--color-track-audio]' },
 ] as const;
 
 const TRACK_HEIGHT = 44;
 const HEADER_WIDTH = 112;
+/** Empty-canvas space available for placing the first clip. */
+const MIN_VIEW_DURATION = ms(10_000);
 
 /**
  * The timeline.
  *
  * Renders real clips from `project.store.ts`'s document — ruler, tracks,
- * playhead and now clips themselves. Placing, moving and trimming clips by
- * drag is not built yet; clips are placed via the Media panel and adjusted
- * via the Split/Delete toolbar buttons on a selected clip.
+ * playhead and clips themselves. Clips can be selected, moved, edge-trimmed,
+ * split and deleted; all document mutations stay in the timeline domain.
  */
 export function TimelinePanel() {
   return (
@@ -109,11 +112,23 @@ function TimelineToolbar() {
       />
 
       <div className="ml-auto flex items-center gap-1">
-        <Button size="icon-sm" variant="ghost" aria-label="Zoom out" onClick={zoomOut} leadingIcon={<ZoomOut />} />
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Zoom out"
+          onClick={zoomOut}
+          leadingIcon={<ZoomOut />}
+        />
         <span className="w-14 text-center font-mono text-2xs tabular-nums text-text-tertiary">
           {Math.round(zoom)} px/s
         </span>
-        <Button size="icon-sm" variant="ghost" aria-label="Zoom in" onClick={zoomIn} leadingIcon={<ZoomIn />} />
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Zoom in"
+          onClick={zoomIn}
+          leadingIcon={<ZoomIn />}
+        />
       </div>
     </div>
   );
@@ -121,10 +136,7 @@ function TimelineToolbar() {
 
 function TrackHeaders() {
   return (
-    <div
-      className="shrink-0 border-r border-border-subtle"
-      style={{ width: HEADER_WIDTH }}
-    >
+    <div className="shrink-0 border-r border-border-subtle" style={{ width: HEADER_WIDTH }}>
       {/* Spacer aligning headers with the ruler. */}
       <div className="h-6 border-b border-border-subtle" />
       {TRACKS.map((track) => (
@@ -143,19 +155,23 @@ function TrackHeaders() {
 
 function TimelineTracks() {
   const zoom = useEditorStore((s) => s.zoom);
-  const placeholderDuration = useEditorStore((s) => s.duration);
   const playhead = useEditorStore((s) => s.playhead);
   const seek = useEditorStore((s) => s.seek);
   const selectedClipId = useEditorStore((s) => s.selectedClipId);
   const selectClip = useEditorStore((s) => s.selectClip);
   const mediaItems = useEditorStore((s) => s.mediaItems);
   const projectDocument = useProjectStore((s) => s.document);
+  const moveClip = useProjectStore((s) => s.moveClip);
+  const trimClip = useProjectStore((s) => s.trimClip);
+  const snapEnabled = useEditorStore((s) => s.snapEnabled);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // The ruler must cover both the placeholder minimum and whatever real
   // clips exist — a clip placed past the placeholder's 60s must stay visible
   // and seekable rather than getting clipped by the ruler's own width.
-  const duration = Math.max(placeholderDuration, getDuration(projectDocument));
-  const width = (duration / 1000) * zoom;
+  const contentDuration = getDuration(projectDocument);
+  const viewDuration = Math.max(MIN_VIEW_DURATION, contentDuration);
+  const width = (viewDuration / 1000) * zoom;
 
   /** Converts a click x-offset into a time and seeks there. */
   const seekFromPointer = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -167,10 +183,28 @@ function TimelineTracks() {
   const mediaNameFor = (assetId: string): string =>
     mediaItems.find((item) => item.id === assetId)?.name ?? 'Unknown clip';
 
+  const snapTargetsFor = (excluded: Clip): readonly Milliseconds[] => [
+    ms(0),
+    playhead,
+    ...projectDocument.tracks.flatMap((track) =>
+      track.clips
+        .filter((clip) => clip.id !== excluded.id)
+        .flatMap((clip) => [clip.start, ms(clip.start + clip.duration)]),
+    ),
+  ];
+
   return (
     <div className="relative min-w-0 flex-1 overflow-x-auto">
+      {editError && (
+        <p
+          role="alert"
+          className="sticky left-2 z-[--z-dropdown] float-left mt-1 rounded-md bg-danger-subtle px-2 py-1 text-xs text-danger"
+        >
+          {editError}
+        </p>
+      )}
       <div style={{ width, minWidth: '100%' }} className="relative">
-        <Ruler zoom={zoom} duration={duration} onSeek={seekFromPointer} />
+        <Ruler zoom={zoom} duration={viewDuration} playhead={playhead} onSeek={seekFromPointer} />
 
         {TRACKS.map((track) => {
           const documentTrack = projectDocument.tracks.find((t) => t.id === track.id);
@@ -191,10 +225,20 @@ function TimelineTracks() {
                   key={clip.id}
                   label={mediaNameFor(clip.assetId)}
                   color={track.color}
-                  left={(clip.start / 1000) * zoom}
-                  width={(clip.duration / 1000) * zoom}
+                  clip={clip}
+                  zoom={zoom}
+                  snapEnabled={snapEnabled}
+                  snapTargets={snapTargetsFor(clip)}
                   selected={clip.id === selectedClipId}
                   onSelect={() => selectClip(clip.id)}
+                  onMove={(newStart) => {
+                    const result = moveClip(clip.id, newStart);
+                    setEditError(result.ok ? null : result.error.recovery);
+                  }}
+                  onTrim={(edge, newTime) => {
+                    const result = trimClip(clip.id, edge, newTime);
+                    setEditError(result.ok ? null : result.error.recovery);
+                  }}
                 />
               ))}
             </div>
@@ -210,25 +254,121 @@ function TimelineTracks() {
 function TimelineClip({
   label,
   color,
-  left,
-  width,
+  clip,
+  zoom,
+  snapEnabled,
+  snapTargets,
   selected,
   onSelect,
+  onMove,
+  onTrim,
 }: {
   label: string;
   color: string;
-  left: number;
-  width: number;
+  clip: Clip;
+  zoom: number;
+  snapEnabled: boolean;
+  snapTargets: readonly Milliseconds[];
   selected: boolean;
   onSelect: () => void;
+  onMove: (newStart: Milliseconds) => void;
+  onTrim: (edge: TrimEdge, newTime: Milliseconds) => void;
 }) {
+  const gesture = useRef<{ mode: 'move' | TrimEdge; startX: number; hasMoved: boolean } | null>(
+    null,
+  );
+  const [preview, setPreview] = useState<{ start: Milliseconds; duration: Milliseconds } | null>(
+    null,
+  );
+
+  const positionFor = (deltaPixels: number) => {
+    const delta = Math.round((deltaPixels / zoom) * 1000);
+    const threshold = ms(Math.round((8 / zoom) * 1000));
+    const mode = gesture.current?.mode ?? 'move';
+    const clipEnd = clip.start + clip.duration;
+
+    if (mode === 'start') {
+      let start = ms(Math.max(0, Math.min(clipEnd - 10, clip.start + delta)));
+      if (snapEnabled) start = snapTimelineTime(start, snapTargets, threshold);
+      start = ms(Math.max(0, Math.min(clipEnd - 10, start)));
+      return { start, duration: ms(clipEnd - start) };
+    }
+
+    if (mode === 'end') {
+      let end = ms(Math.max(clip.start + 10, clipEnd + delta));
+      if (snapEnabled) end = snapTimelineTime(end, snapTargets, threshold);
+      end = ms(Math.max(clip.start + 10, end));
+      return { start: clip.start, duration: ms(end - clip.start) };
+    }
+
+    let start = ms(Math.max(0, clip.start + delta));
+    if (snapEnabled) {
+      const snappedStart = snapTimelineTime(start, snapTargets, threshold);
+      const proposedEnd = ms(start + clip.duration);
+      const snappedEnd = snapTimelineTime(proposedEnd, snapTargets, threshold);
+      start =
+        Math.abs(snappedStart - start) <= Math.abs(snappedEnd - proposedEnd)
+          ? snappedStart
+          : ms(snappedEnd - clip.duration);
+      start = ms(Math.max(0, start));
+    }
+    return { start, duration: clip.duration };
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    const edge = (event.target as HTMLElement).dataset.trimEdge;
+    const mode = edge === 'start' || edge === 'end' ? edge : 'move';
+    gesture.current = { mode, startX: event.clientX, hasMoved: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onSelect();
+  };
+
+  const handlePointerMove = (event: PointerEvent<HTMLButtonElement>) => {
+    const current = gesture.current;
+    if (!current) return;
+    const delta = event.clientX - current.startX;
+    if (Math.abs(delta) > 2) current.hasMoved = true;
+    if (current.hasMoved) setPreview(positionFor(delta));
+  };
+
+  const finishPointer = (event: PointerEvent<HTMLButtonElement>) => {
+    const current = gesture.current;
+    if (!current) return;
+    const position = positionFor(event.clientX - current.startX);
+    if (current.hasMoved) {
+      if (current.mode === 'move') onMove(position.start);
+      else if (current.mode === 'start') onTrim('start', position.start);
+      else onTrim('end', ms(position.start + position.duration));
+    }
+    gesture.current = null;
+    setPreview(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const cancelPointer = () => {
+    gesture.current = null;
+    setPreview(null);
+  };
+
+  const visible = preview ?? clip;
+  const left = (visible.start / 1000) * zoom;
+  const width = (visible.duration / 1000) * zoom;
+
   return (
     <button
       type="button"
       onClick={onSelect}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishPointer}
+      onPointerCancel={cancelPointer}
       title={label}
+      aria-label={`${label}, ${(clip.duration / 1000).toFixed(2)} seconds`}
       className={cn(
-        'absolute top-1 bottom-1 overflow-hidden rounded-sm px-1.5 text-left text-2xs text-text-on-brand',
+        'group absolute top-1 bottom-1 cursor-grab touch-none overflow-hidden rounded-sm px-1.5 text-left text-2xs text-text-on-brand active:cursor-grabbing',
         'transition-shadow duration-[--duration-fast]',
         'focus-visible:outline-2 focus-visible:outline-offset-2',
         'focus-visible:outline-[--color-border-focus]',
@@ -240,7 +380,17 @@ function TimelineClip({
       // Guard against a sliver too thin to click at extreme zoom-out.
       style={{ left, width: Math.max(width, 4) }}
     >
+      <span
+        data-trim-edge="start"
+        className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize bg-surface-overlay/40 opacity-0 group-hover:opacity-100"
+        aria-hidden="true"
+      />
       <span className="truncate">{label}</span>
+      <span
+        data-trim-edge="end"
+        className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize bg-surface-overlay/40 opacity-0 group-hover:opacity-100"
+        aria-hidden="true"
+      />
     </button>
   );
 }
@@ -248,10 +398,12 @@ function TimelineClip({
 function Ruler({
   zoom,
   duration,
+  playhead,
   onSeek,
 }: {
   zoom: number;
   duration: number;
+  playhead: number;
   onSeek: (event: React.PointerEvent<HTMLDivElement>) => void;
 }) {
   // Choose a tick interval that keeps labels ~60px apart, so the ruler stays
@@ -268,7 +420,7 @@ function Ruler({
       aria-label="Playhead position"
       aria-valuemin={0}
       aria-valuemax={Math.round(duration)}
-      aria-valuenow={0}
+      aria-valuenow={Math.round(playhead)}
       tabIndex={0}
     >
       {Array.from({ length: ticks }, (_, i) => {

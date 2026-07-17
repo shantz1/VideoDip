@@ -54,4 +54,22 @@ describe('toCompositionClips', () => {
   it('returns an empty list for an empty timeline', () => {
     expect(toCompositionClips(createEmptyTimeline(), () => 'x')).toHaveLength(0);
   });
+
+  it('orders layers from audio through video to topmost subtitles', () => {
+    let document = createEmptyTimeline();
+    for (const trackId of ['subtitle', 'video', 'audio'] as TrackId[]) {
+      const result = addClip(document, {
+        trackId,
+        assetId: `${trackId}-asset` as AssetId,
+        start: ms(0),
+        duration: ms(1000),
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      document = result.value;
+    }
+
+    expect(
+      toCompositionClips(document, (assetId) => String(assetId)).map((clip) => clip.kind),
+    ).toEqual(['audio', 'video', 'subtitle']);
+  });
 });

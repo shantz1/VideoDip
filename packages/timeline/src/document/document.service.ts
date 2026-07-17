@@ -114,7 +114,13 @@ export function addClip(document: TimelineDocument, input: AddClipInput): Result
     sourceStart: input.sourceStart ?? (0 as Milliseconds),
   };
 
-  return ok(withTrackClips(document, track.id, [...track.clips, clip].sort((a, b) => a.start - b.start)));
+  return ok(
+    withTrackClips(
+      document,
+      track.id,
+      [...track.clips, clip].sort((a, b) => a.start - b.start),
+    ),
+  );
 }
 
 /**
@@ -209,7 +215,9 @@ export function moveClip(
     withTrackClips(
       withoutOld,
       targetTrackId,
-      [...targetTrack.clips.filter((c) => c.id !== clipId), moved].sort((a, b) => a.start - b.start),
+      [...targetTrack.clips.filter((c) => c.id !== clipId), moved].sort(
+        (a, b) => a.start - b.start,
+      ),
     ),
   );
 }
@@ -238,7 +246,9 @@ export function trimClip(
   const { clip } = found;
   const track = document.tracks[found.trackIndex];
   if (!track) {
-    return err(appError('NOT_FOUND', 'Clip track disappeared mid-operation.', 'Reload the project.'));
+    return err(
+      appError('NOT_FOUND', 'Clip track disappeared mid-operation.', 'Reload the project.'),
+    );
   }
 
   const clipEnd = clip.start + clip.duration;
@@ -249,12 +259,20 @@ export function trimClip(
     const sourceDelta = newTime - clip.start;
     if (newDuration <= 0) {
       return err(
-        appError('VALIDATION', 'Trimming past the end of the clip.', 'Trim to a point before the clip ends.'),
+        appError(
+          'VALIDATION',
+          'Trimming past the end of the clip.',
+          'Trim to a point before the clip ends.',
+        ),
       );
     }
     if (clip.sourceStart + sourceDelta < 0) {
       return err(
-        appError('VALIDATION', 'Trimming before the start of the source.', 'The source has no earlier frames to reveal.'),
+        appError(
+          'VALIDATION',
+          'Trimming before the start of the source.',
+          'The source has no earlier frames to reveal.',
+        ),
       );
     }
     trimmed = {
@@ -267,7 +285,11 @@ export function trimClip(
     const newDuration = newTime - clip.start;
     if (newDuration <= 0) {
       return err(
-        appError('VALIDATION', 'Trimming before the start of the clip.', 'Trim to a point after the clip starts.'),
+        appError(
+          'VALIDATION',
+          'Trimming before the start of the clip.',
+          'Trim to a point after the clip starts.',
+        ),
       );
     }
     trimmed = { ...clip, duration: newDuration as Milliseconds };
@@ -276,11 +298,21 @@ export function trimClip(
   const siblings = track.clips.filter((c) => c.id !== clipId);
   if (siblings.some((existing) => spansOverlap(existing, trimmed))) {
     return err(
-      appError('CONFLICT', 'The trimmed clip would overlap a neighbour.', 'Trim by a smaller amount.'),
+      appError(
+        'CONFLICT',
+        'The trimmed clip would overlap a neighbour.',
+        'Trim by a smaller amount.',
+      ),
     );
   }
 
-  return ok(withTrackClips(document, track.id, [...siblings, trimmed].sort((a, b) => a.start - b.start)));
+  return ok(
+    withTrackClips(
+      document,
+      track.id,
+      [...siblings, trimmed].sort((a, b) => a.start - b.start),
+    ),
+  );
 }
 
 /**
@@ -301,7 +333,9 @@ export function splitClip(
   const { clip } = found;
   const track = document.tracks[found.trackIndex];
   if (!track) {
-    return err(appError('NOT_FOUND', 'Clip track disappeared mid-operation.', 'Reload the project.'));
+    return err(
+      appError('NOT_FOUND', 'Clip track disappeared mid-operation.', 'Reload the project.'),
+    );
   }
 
   const clipEnd = clip.start + clip.duration;
@@ -326,5 +360,11 @@ export function splitClip(
   };
 
   const rest = track.clips.filter((c) => c.id !== clipId);
-  return ok(withTrackClips(document, track.id, [...rest, left, right].sort((a, b) => a.start - b.start)));
+  return ok(
+    withTrackClips(
+      document,
+      track.id,
+      [...rest, left, right].sort((a, b) => a.start - b.start),
+    ),
+  );
 }

@@ -1,4 +1,7 @@
-import type { AssetId } from '@videodip/shared';
+import type { AssetId, Milliseconds } from '@videodip/shared';
+
+/** Media categories the timeline and renderer can place without probing codecs. */
+export type MediaKind = 'video' | 'audio';
 
 /**
  * A media file the user has imported.
@@ -12,4 +15,8 @@ export interface MediaItem {
   readonly path: string;
   /** Display name, derived from the path's basename. */
   readonly name: string;
+  /** Determines the default timeline track and preview element. */
+  readonly kind: MediaKind;
+  /** Decoded source length, or `null` when the platform cannot probe it. */
+  readonly duration: Milliseconds | null;
 }

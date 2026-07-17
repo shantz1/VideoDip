@@ -48,5 +48,6 @@ export function toCompositionClips(
     }
   }
 
-  return clips;
+  const layerOrder = { audio: 0, video: 1, subtitle: 2 } as const;
+  return clips.sort((a, b) => layerOrder[a.kind] - layerOrder[b.kind]);
 }

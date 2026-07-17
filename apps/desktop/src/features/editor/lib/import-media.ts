@@ -1,7 +1,8 @@
-import { isTauri } from '@tauri-apps/api/core';
+import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { createMediaItem, type MediaItem } from '@videodip/media-engine';
 import { appError, err, tryCatchAsync, type Result } from '@videodip/shared';
+import { probeMediaDuration } from './probe-media';
 
 /**
  * Extensions the media panel accepts.
@@ -9,7 +10,19 @@ import { appError, err, tryCatchAsync, type Result } from '@videodip/shared';
  * Narrow on purpose — broadens as `media-engine` gains real container/codec
  * probing rather than guessing from an extension list.
  */
-const MEDIA_EXTENSIONS = ['mp4', 'mov', 'mkv', 'webm', 'avi', 'mp3', 'wav', 'aac', 'flac', 'm4a'];
+const MEDIA_EXTENSIONS = [
+  'mp4',
+  'mov',
+  'mkv',
+  'webm',
+  'avi',
+  'mp3',
+  'wav',
+  'aac',
+  'flac',
+  'm4a',
+  'ogg',
+];
 
 /**
  * Opens the native file picker and returns the media items the user selected.
@@ -44,9 +57,14 @@ export async function importMedia(): Promise<Result<readonly MediaItem[]>> {
 
       if (selection === null) return [];
       const paths = Array.isArray(selection) ? selection : [selection];
-      return paths.map(createMediaItem);
+      return Promise.all(
+        paths.map(async (path) => {
+          const item = createMediaItem(path);
+          const duration = await probeMediaDuration(convertFileSrc(path), item.kind);
+          return duration.ok ? { ...item, duration: duration.value } : item;
+        }),
+      );
     },
-    (cause) =>
-      appError('IO', 'The native file dialog failed.', 'Try importing again.', { cause }),
+    (cause) => appError('IO', 'The native file dialog failed.', 'Try importing again.', { cause }),
   );
 }

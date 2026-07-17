@@ -4,6 +4,7 @@ import { ms } from '@videodip/shared';
 import { useMemo } from 'react';
 import { useShortcuts, type Shortcut } from '../../shortcuts/index';
 import { useEditorStore } from '../editor.store';
+import { useProjectStore } from '../project.store';
 import { LeftSidebar } from './left-sidebar';
 import { PreviewCanvas } from './preview-canvas';
 import { RightInspector } from './right-inspector';
@@ -34,11 +35,46 @@ export function EditorShell() {
   const toggleSnap = useEditorStore((s) => s.toggleSnap);
   const toggleSidebar = useEditorStore((s) => s.toggleSidebar);
   const toggleInspector = useEditorStore((s) => s.toggleInspector);
+  const selectedClipId = useEditorStore((s) => s.selectedClipId);
+  const selectClip = useEditorStore((s) => s.selectClip);
+  const undo = useProjectStore((s) => s.undo);
+  const redo = useProjectStore((s) => s.redo);
+  const removeClip = useProjectStore((s) => s.removeClip);
+  const canUndo = useProjectStore((s) => s.past.length > 0);
+  const canRedo = useProjectStore((s) => s.future.length > 0);
 
   // Memoised so the identity is stable: useShortcuts re-registers when the
   // list's shape changes, and a fresh array every render would thrash it.
   const shortcuts = useMemo<readonly Shortcut[]>(
     () => [
+      {
+        id: 'edit.undo',
+        label: 'Undo',
+        scope: 'global',
+        combo: { key: 'z', mod: true },
+        disabled: !canUndo,
+        run: undo,
+      },
+      {
+        id: 'edit.redo',
+        label: 'Redo',
+        scope: 'global',
+        combo: { key: 'z', mod: true, shift: true },
+        disabled: !canRedo,
+        run: redo,
+      },
+      {
+        id: 'edit.deleteClip',
+        label: 'Delete selected clip',
+        scope: 'timeline',
+        combo: { key: 'delete' },
+        disabled: selectedClipId === null,
+        run: () => {
+          if (!selectedClipId) return;
+          removeClip(selectedClipId);
+          selectClip(null);
+        },
+      },
       {
         id: 'playback.toggle',
         label: 'Play / Pause',
@@ -134,6 +170,13 @@ export function EditorShell() {
       toggleSnap,
       toggleSidebar,
       toggleInspector,
+      selectedClipId,
+      selectClip,
+      undo,
+      redo,
+      removeClip,
+      canUndo,
+      canRedo,
     ],
   );
 

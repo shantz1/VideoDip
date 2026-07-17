@@ -11,6 +11,10 @@ beforeEach(() => {
 });
 
 describe('playhead', () => {
+  beforeEach(() => {
+    state().setProjectDuration(ms(2000));
+  });
+
   it('seeks to a time', () => {
     state().seek(ms(1500));
     expect(state().playhead).toBe(1500);
@@ -36,6 +40,12 @@ describe('playhead', () => {
     state().seek(ms(100));
     state().nudge(ms(-500));
     expect(state().playhead).toBe(0);
+  });
+
+  it('clamps the playhead when an edit shortens the project', () => {
+    state().seek(ms(1500));
+    state().setProjectDuration(ms(750));
+    expect(state().playhead).toBe(750);
   });
 });
 
@@ -142,6 +152,12 @@ describe('project', () => {
     state().newProject();
     state().newProject();
     expect(state().projectName).toBe('Untitled project 3');
+  });
+
+  it('starts with an empty project media pool', () => {
+    state().addMediaItems([createMediaItem('/old-project.mp4')]);
+    state().newProject();
+    expect(state().mediaItems).toEqual([]);
   });
 
   it('adds media items to the pool without touching the project', () => {

@@ -51,7 +51,6 @@ export function PreviewPlayer() {
   const aspectRatio = useEditorStore((s) => s.aspectRatio);
   const isPlaying = useEditorStore((s) => s.isPlaying);
   const playhead = useEditorStore((s) => s.playhead);
-  const placeholderDuration = useEditorStore((s) => s.duration);
   const seek = useEditorStore((s) => s.seek);
   const pause = useEditorStore((s) => s.pause);
 
@@ -69,13 +68,7 @@ export function PreviewPlayer() {
     return toCompositionClips(documentValue, resolveSrc);
   }, [documentValue, mediaItems]);
 
-  const durationInFrames = Math.max(
-    1,
-    msToFrames(
-      Math.max(placeholderDuration, getDuration(documentValue)) as typeof placeholderDuration,
-      PROJECT_FPS,
-    ),
-  );
+  const durationInFrames = Math.max(1, msToFrames(getDuration(documentValue), PROJECT_FPS));
 
   // store.isPlaying → player transport.
   useEffect(() => {

@@ -3,8 +3,10 @@
 import { ms } from '@videodip/shared';
 import { Button, cn } from '@videodip/ui';
 import { Maximize2, Pause, Play, SkipBack, SkipForward } from 'lucide-react';
+import { useState } from 'react';
 import { useEditorStore, type AspectRatio } from '../editor.store';
 import { formatTimecode } from '../lib/timecode';
+import { toggleFullscreen } from '../lib/toggle-fullscreen';
 import { PreviewPlayer } from './preview-player';
 
 /**
@@ -68,6 +70,17 @@ function TransportBar() {
   const duration = useEditorStore((s) => s.duration);
   const togglePlayback = useEditorStore((s) => s.togglePlayback);
   const seek = useEditorStore((s) => s.seek);
+  const [isChangingFullscreen, setIsChangingFullscreen] = useState(false);
+  const [fullscreenError, setFullscreenError] = useState<string | null>(null);
+
+  const handleFullscreen = () => {
+    setFullscreenError(null);
+    setIsChangingFullscreen(true);
+    void toggleFullscreen().then((result) => {
+      if (!result.ok) setFullscreenError(result.error.recovery);
+      setIsChangingFullscreen(false);
+    });
+  };
 
   return (
     <div
@@ -89,6 +102,7 @@ function TransportBar() {
         // The label must describe the action, not the state — a button reading
         // "Play" while playing is what a screen reader would announce.
         aria-label={isPlaying ? 'Pause' : 'Play'}
+        disabled={duration === 0}
         onClick={togglePlayback}
         leadingIcon={isPlaying ? <Pause /> : <Play />}
       />
@@ -110,8 +124,15 @@ function TransportBar() {
         variant="ghost"
         className="ml-auto"
         aria-label="Fullscreen"
+        loading={isChangingFullscreen}
+        onClick={handleFullscreen}
         leadingIcon={<Maximize2 />}
       />
+      {fullscreenError && (
+        <span role="alert" className="sr-only">
+          {fullscreenError}
+        </span>
+      )}
     </div>
   );
 }

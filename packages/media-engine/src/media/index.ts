@@ -1,2 +1,2 @@
-export type { MediaItem } from './media.types.js';
-export { createMediaItem } from './media.service.js';
+export type { MediaItem, MediaKind } from './media.types.js';
+export { createMediaItem, getMediaKind } from './media.service.js';

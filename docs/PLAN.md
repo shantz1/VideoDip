@@ -7,12 +7,13 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
 
 ## Now
 
-- [ ] **Real media duration on import** — every clip added from the media
-      pool is a placeholder 5s (`UNKNOWN_CLIP_DURATION` in
-      `left-sidebar.tsx`) because `media-engine` doesn't probe files yet.
-      Probing belongs behind a Tauri command (FFmpeg/ffprobe orchestration is
-      `media-engine`'s whole job); the import flow then passes real duration
-      through to `addClip`.
+- [ ] **Durable project persistence + autosave** — the timeline document and
+      media pool are real in-memory state, but `.videodip` archive loading and
+      SQLite-backed autosave are still the next project-level slice.
+- [ ] **FFprobe metadata fallback** — import now reads real duration through
+      the platform media decoder and never invents metadata. Containers the
+      webview cannot decode remain explicitly “duration unknown” and use a 5s
+      placement fallback until bundled FFprobe probing lands.
 
 ## Queued (user-requested, not yet started)
 
@@ -40,7 +41,7 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
 
 - [ ] **AI model download (Whisper or equivalent)** — ADR-0002 names
       Faster-Whisper/WhisperX, both Python-based. The desktop shell has no
-      Node *and* no Python runtime bundled, so shipping either means bundling
+      Node _and_ no Python runtime bundled, so shipping either means bundling
       a Python distribution inside a Tauri app — a real architectural cost
       nobody has signed off on. A Rust-native alternative (e.g. `whisper.cpp`
       as a Tauri sidecar binary, downloading GGML model files directly) avoids
@@ -48,6 +49,12 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
       before implementation starts, not just a wired button.
 
 ## Done (this session, 2026-07-17)
+
+- **Core editor interactions wired end to end** — real media type/duration,
+  correct audio/video track routing, project-derived transport duration,
+  subtitle/video/audio visual stacking, bottom-to-top render ordering, clip
+  move/trim with snapping, editable inspector properties, undo/redo commands
+  and shortcuts, fullscreen, command menus, and native FFmpeg export progress.
 
 - **Real video preview via Remotion** — `apps/renderer` gained its first real
   content: `VideoDipComposition`, headless-drivable, consumed by the desktop's
@@ -64,9 +71,9 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
   `TimelineDocument` plus pure operations: `addClip`, `removeClip`, `moveClip`,
   `trimClip`, `splitClip`, `getDuration`. All fallible ops return `Result`,
   never throw. 25 tests, including overlap/conflict edge cases.
-- **Media pool → timeline** — a "+" affordance per media item places a
-  placeholder-duration clip on the video track at the playhead; failures
-  (overlap) surface as an inline alert, not a swallowed error.
+- **Media pool → timeline** — a "+" affordance per media item places it on the
+  matching audio/video track at the playhead with decoded duration when
+  available; failures surface as an inline alert, not a swallowed error.
 - **Real clips in `timeline-panel.tsx`** — clips render as colored, labeled,
   clickable blocks positioned by real start/duration; selecting one enables
   the previously-inert Split/Delete toolbar buttons, both wired to the real
@@ -74,7 +81,8 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
   inside the selected clip (mirrors `splitClip`'s own validation). New
   `selectedClipId` state added to `editor.store.ts` (UI concern, not
   document state) plus a `project.store.ts` wrapping the timeline package for
-  React. Drag-to-move/trim intentionally not built — separate, larger scope.
+  React. Drag-to-move and edge trimming now commit through the same domain
+  operations and participate in undo/redo history.
 - **Configurable aspect ratio** — `editor.store.ts` gained `AspectRatio`
   ('9:16' | '3:4' | '4:5' | '16:9') state; `preview-canvas.tsx`'s `Stage` now
   reads it via inline `style.aspectRatio` (Tailwind can't do dynamic arbitrary

@@ -13,7 +13,12 @@ beforeEach(() => {
 
 describe('addClip', () => {
   it('applies a successful add to the document', () => {
-    const result = state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    const result = state().addClip({
+      trackId: VIDEO,
+      assetId: ASSET,
+      start: ms(0),
+      duration: ms(1000),
+    });
 
     expect(result.ok).toBe(true);
     expect(state().document.tracks.find((t) => t.id === 'video')?.clips).toHaveLength(1);
@@ -23,7 +28,12 @@ describe('addClip', () => {
     state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
     const before = state().document;
 
-    const result = state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(500), duration: ms(1000) });
+    const result = state().addClip({
+      trackId: VIDEO,
+      assetId: ASSET,
+      start: ms(500),
+      duration: ms(1000),
+    });
 
     expect(result.ok).toBe(false);
     expect(state().document).toBe(before);
@@ -75,5 +85,35 @@ describe('reset', () => {
 
     state().reset();
     expect(state().document.tracks.every((t) => t.clips.length === 0)).toBe(true);
+  });
+});
+
+describe('undo / redo', () => {
+  it('undoes and reapplies document edits', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    expect(state().past).toHaveLength(1);
+
+    state().undo();
+    expect(state().document.tracks[0]?.clips).toHaveLength(0);
+    expect(state().future).toHaveLength(1);
+
+    state().redo();
+    expect(state().document.tracks[0]?.clips).toHaveLength(1);
+  });
+
+  it('clears redo history when a new edit follows undo', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    state().undo();
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(2000), duration: ms(1000) });
+
+    expect(state().future).toHaveLength(0);
+  });
+
+  it('clears history for a new project', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    state().reset();
+
+    expect(state().past).toHaveLength(0);
+    expect(state().future).toHaveLength(0);
   });
 });

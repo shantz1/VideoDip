@@ -15,9 +15,6 @@ import { create } from 'zustand';
  * into the same store as "what the user edited" is how undo ends up restoring
  * panel widths.
  *
- * Placeholder state is marked. It exists so the shell can render real
- * interactions before the engines land, and it must be replaced rather than
- * built upon.
  */
 
 /** Left sidebar sections, per the product brief. */
@@ -59,11 +56,7 @@ export interface EditorState {
   // --- Transport ---
   readonly isPlaying: boolean;
   readonly playhead: Milliseconds;
-  /**
-   * PLACEHOLDER. Real duration comes from the loaded project once
-   * `packages/timeline` exists. Hardcoded so the ruler and playhead have
-   * something to scale against.
-   */
+  /** Real content duration, synchronized from the timeline document. */
   readonly duration: Milliseconds;
 
   // --- Timeline view ---
@@ -86,7 +79,7 @@ export interface EditorState {
   readonly selectedClipId: ClipId | null;
 
   // --- Project ---
-  /** PLACEHOLDER. Null until the project manager exists. */
+  /** Null until a project is created or loaded. */
   readonly projectName: string | null;
   /** Drives the "saved / unsaved" indicator. Autosave will own this. */
   readonly isDirty: boolean;
@@ -111,6 +104,8 @@ export interface EditorState {
   readonly seek: (time: Milliseconds) => void;
   /** Moves the playhead by a delta, clamped to the project bounds. */
   readonly nudge: (delta: Milliseconds) => void;
+  /** Synchronizes transport bounds after an undoable document edit. */
+  readonly setProjectDuration: (duration: Milliseconds) => void;
   readonly setZoom: (zoom: number) => void;
   readonly zoomIn: () => void;
   readonly zoomOut: () => void;
@@ -118,6 +113,8 @@ export interface EditorState {
   readonly setAspectRatio: (ratio: AspectRatio) => void;
   readonly selectClip: (clipId: ClipId | null) => void;
   readonly addMediaItems: (items: readonly MediaItem[]) => void;
+  /** Marks the in-memory project as changed since its last persisted state. */
+  readonly markDirty: () => void;
   /**
    * Starts a new, unnamed, in-memory project.
    *
@@ -136,9 +133,6 @@ const ZOOM_MAX = 400;
 const ZOOM_DEFAULT = 50;
 const ZOOM_STEP = 1.3;
 
-/** PLACEHOLDER duration: 60s. Replaced by the loaded project. */
-const PLACEHOLDER_DURATION = ms(60_000);
-
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 export const useEditorStore = create<EditorState>()((set, get) => ({
@@ -149,7 +143,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
 
   isPlaying: false,
   playhead: ms(0),
-  duration: PLACEHOLDER_DURATION,
+  duration: ms(0),
 
   zoom: ZOOM_DEFAULT,
   snapEnabled: true,
@@ -188,6 +182,13 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     set({ playhead: ms(clamp(playhead + delta, 0, duration)) });
   },
 
+  setProjectDuration: (duration) =>
+    set((state) => ({
+      duration,
+      playhead: ms(clamp(state.playhead, 0, duration)),
+      isPlaying: duration > 0 && state.playhead < duration ? state.isPlaying : false,
+    })),
+
   setZoom: (zoom) => set({ zoom: clamp(zoom, ZOOM_MIN, ZOOM_MAX) }),
 
   // Multiplicative steps, not additive: zoom is perceptually logarithmic, so a
@@ -201,8 +202,9 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
 
   selectClip: (selectedClipId) => set({ selectedClipId }),
 
-  addMediaItems: (items) =>
-    set((state) => ({ mediaItems: [...state.mediaItems, ...items] })),
+  addMediaItems: (items) => set((state) => ({ mediaItems: [...state.mediaItems, ...items] })),
+
+  markDirty: () => set({ isDirty: true }),
 
   newProject: () => {
     const match = get().projectName?.match(UNTITLED_PROJECT_PATTERN);
@@ -211,6 +213,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       projectName: next === 1 ? 'Untitled project' : `Untitled project ${next}`,
       isDirty: true,
       selectedClipId: null,
+      mediaItems: [],
     });
   },
 }));

@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Image,
   LayoutTemplate,
+  Music,
   Package,
   Plus,
   Settings,
@@ -22,13 +23,13 @@ import { useProjectStore } from '../project.store';
 import { EmptyState } from './empty-state';
 
 /**
- * PLACEHOLDER duration for a clip added to the timeline.
+ * Fallback only for containers the platform decoder cannot inspect yet.
  *
  * `media-engine` doesn't probe real media duration yet — see `MediaItem`'s
  * own doc. Every clip gets this length until it does; trimming already works
  * for shortening one down in the meantime.
  */
-const DEFAULT_CLIP_DURATION = ms(5000);
+const UNKNOWN_CLIP_DURATION = ms(5000);
 
 interface PanelDef {
   readonly id: SidebarPanel;
@@ -82,9 +83,7 @@ export function LeftSidebar() {
 
       {!collapsed && (
         <aside
-          className={cn(
-            'flex w-60 flex-col border-r border-border-subtle bg-surface-base',
-          )}
+          className={cn('flex w-60 flex-col border-r border-border-subtle bg-surface-base')}
           aria-label={active?.label}
         >
           <div className="flex h-9 shrink-0 items-center px-3">
@@ -131,10 +130,7 @@ function RailButton({
       <Icon className="size-[18px]" aria-hidden="true" />
       <span className="sr-only">{panel.label}</span>
       {active && (
-        <span
-          className="absolute left-0 h-4 w-0.5 rounded-r-full bg-accent"
-          aria-hidden="true"
-        />
+        <span className="absolute left-0 h-4 w-0.5 rounded-r-full bg-accent" aria-hidden="true" />
       )}
     </button>
   );
@@ -175,7 +171,11 @@ function PanelBody({ panel }: { panel: SidebarPanel }) {
       );
     case 'fonts':
       return (
-        <EmptyState icon={Type} title="Fonts" description="Bundled and system fonts for captions." />
+        <EmptyState
+          icon={Type}
+          title="Fonts"
+          description="Bundled and system fonts for captions."
+        />
       );
     case 'plugins':
       return (
@@ -300,34 +300,38 @@ function MediaPanel() {
   const addClip = useProjectStore((s) => s.addClip);
   const [importError, setImportError] = useState<string | null>(null);
   const [timelineError, setTimelineError] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   const handleImport = () => {
     setImportError(null);
+    setIsImporting(true);
     void importMedia().then((result) => {
       if (result.ok) {
         if (result.value.length > 0) addMediaItems(result.value);
       } else {
         setImportError(result.error.recovery);
       }
+      setIsImporting(false);
     });
   };
 
-  const handleAddToTimeline = (assetId: (typeof mediaItems)[number]['id']) => {
+  const handleAddToTimeline = (item: (typeof mediaItems)[number]) => {
     setTimelineError(null);
-    const trackId = 'video' as TrackId;
+    const trackId = item.kind as TrackId;
+    const duration = item.duration ?? UNKNOWN_CLIP_DURATION;
     // Place at the playhead when that spot is free, otherwise in the first
     // gap after it — "add" should place the clip, not lecture the user about
     // where their playhead is.
-    const start = findFreeStart(timelineDocument, trackId, playhead, DEFAULT_CLIP_DURATION);
+    const start = findFreeStart(timelineDocument, trackId, playhead, duration);
     if (!start.ok) {
       setTimelineError(start.error.recovery);
       return;
     }
     const result = addClip({
       trackId,
-      assetId,
+      assetId: item.id,
       start: start.value,
-      duration: DEFAULT_CLIP_DURATION,
+      duration,
     });
     if (!result.ok) setTimelineError(result.error.recovery);
   };
@@ -340,6 +344,7 @@ function MediaPanel() {
           title="No media yet"
           description="Drop video or audio files here to get started. Nothing is uploaded — files stay on your machine."
           action="Import media"
+          actionLoading={isImporting}
           onAction={handleImport}
         />
         {importError && <PanelErrorNotice message={importError} />}
@@ -354,6 +359,8 @@ function MediaPanel() {
       <button
         type="button"
         onClick={handleImport}
+        aria-busy={isImporting || undefined}
+        aria-disabled={isImporting || undefined}
         className={cn(
           'flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs',
           'text-text-secondary transition-colors duration-[--duration-fast]',
@@ -367,30 +374,45 @@ function MediaPanel() {
       </button>
 
       <ul className="flex flex-col gap-0.5" aria-label="Imported media">
-        {mediaItems.map((item) => (
-          <li
-            key={item.id}
-            className={cn(
-              'group flex items-center gap-2 rounded-md px-2 py-1.5',
-              'text-xs text-text-primary hover:bg-surface-hover',
-            )}
-            title={item.path}
-          >
-            <Video className="size-3.5 shrink-0 text-text-tertiary" aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate">{item.name}</span>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label={`Add ${item.name} to the timeline`}
-              className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-              onClick={() => handleAddToTimeline(item.id)}
-              leadingIcon={<Plus />}
-            />
-          </li>
-        ))}
+        {mediaItems.map((item) => {
+          const ItemIcon = item.kind === 'audio' ? Music : Video;
+          return (
+            <li
+              key={item.id}
+              className={cn(
+                'group flex items-center gap-2 rounded-md px-2 py-1.5',
+                'text-xs text-text-primary hover:bg-surface-hover',
+              )}
+              title={item.path}
+            >
+              <ItemIcon className="size-3.5 shrink-0 text-text-tertiary" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate">
+                {item.name}
+                <span className="block text-2xs text-text-tertiary">
+                  {item.duration === null ? 'Duration unknown' : formatMediaDuration(item.duration)}
+                </span>
+              </span>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={`Add ${item.name} to the timeline`}
+                className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                onClick={() => handleAddToTimeline(item)}
+                leadingIcon={<Plus />}
+              />
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
+}
+
+function formatMediaDuration(duration: number): string {
+  const totalSeconds = Math.round(duration / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+  return `${minutes}:${seconds}`;
 }
 
 /**
@@ -403,10 +425,7 @@ function MediaPanel() {
  */
 function PanelErrorNotice({ message }: { message: string }) {
   return (
-    <p
-      role="alert"
-      className="rounded-md bg-danger-subtle px-2 py-1.5 text-xs text-danger"
-    >
+    <p role="alert" className="rounded-md bg-danger-subtle px-2 py-1.5 text-xs text-danger">
       {message}
     </p>
   );
