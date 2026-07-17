@@ -1,4 +1,5 @@
-﻿import { ms } from '@videodip/shared';
+﻿import { createMediaItem } from '@videodip/media-engine';
+import { ms } from '@videodip/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useEditorStore } from './editor.store';
 
@@ -64,6 +65,20 @@ describe('zoom', () => {
   });
 });
 
+describe('aspect ratio', () => {
+  it('defaults to 9:16', () => {
+    expect(state().aspectRatio).toBe('9:16');
+  });
+
+  it('switches to any supported ratio', () => {
+    state().setAspectRatio('16:9');
+    expect(state().aspectRatio).toBe('16:9');
+
+    state().setAspectRatio('4:5');
+    expect(state().aspectRatio).toBe('4:5');
+  });
+});
+
 describe('playback', () => {
   it('toggles', () => {
     expect(state().isPlaying).toBe(false);
@@ -96,5 +111,44 @@ describe('layout', () => {
 
     expect(state().inspectorCollapsed).toBe(false);
     expect(state().inspectorTab).toBe('audio');
+  });
+});
+
+describe('selection', () => {
+  it('selects and clears a clip', () => {
+    state().selectClip('clip-1' as never);
+    expect(state().selectedClipId).toBe('clip-1');
+
+    state().selectClip(null);
+    expect(state().selectedClipId).toBeNull();
+  });
+});
+
+describe('project', () => {
+  it('names the first project "Untitled project" and marks it dirty', () => {
+    state().newProject();
+    expect(state().projectName).toBe('Untitled project');
+    expect(state().isDirty).toBe(true);
+  });
+
+  it('clears any clip selection when starting a new project', () => {
+    state().selectClip('clip-1' as never);
+    state().newProject();
+    expect(state().selectedClipId).toBeNull();
+  });
+
+  it('increments the name on repeated clicks so it is visibly not a no-op', () => {
+    state().newProject();
+    state().newProject();
+    state().newProject();
+    expect(state().projectName).toBe('Untitled project 3');
+  });
+
+  it('adds media items to the pool without touching the project', () => {
+    const item = createMediaItem('/a.mp4');
+    state().addMediaItems([item]);
+
+    expect(state().mediaItems).toEqual([item]);
+    expect(state().projectName).toBeNull();
   });
 });

@@ -1,19 +1,34 @@
 'use client';
 
-import { cn } from '@videodip/ui';
+import { ms, type TrackId } from '@videodip/shared';
+import { findFreeStart } from '@videodip/timeline';
+import { Button, cn, useTheme, type ThemeMode } from '@videodip/ui';
 import {
   FolderOpen,
   Image,
   LayoutTemplate,
   Package,
+  Plus,
   Settings,
   Sparkles,
   Type,
   Video,
   type LucideIcon,
 } from 'lucide-react';
-import { useEditorStore, type SidebarPanel } from '../editor.store';
+import { useState } from 'react';
+import { useEditorStore, type AspectRatio, type SidebarPanel } from '../editor.store';
+import { importMedia } from '../lib/import-media';
+import { useProjectStore } from '../project.store';
 import { EmptyState } from './empty-state';
+
+/**
+ * PLACEHOLDER duration for a clip added to the timeline.
+ *
+ * `media-engine` doesn't probe real media duration yet — see `MediaItem`'s
+ * own doc. Every clip gets this length until it does; trimming already works
+ * for shortening one down in the meantime.
+ */
+const DEFAULT_CLIP_DURATION = ms(5000);
 
 interface PanelDef {
   readonly id: SidebarPanel;
@@ -135,23 +150,9 @@ function RailButton({
 function PanelBody({ panel }: { panel: SidebarPanel }) {
   switch (panel) {
     case 'media':
-      return (
-        <EmptyState
-          icon={Video}
-          title="No media yet"
-          description="Drop video or audio files here to get started. Nothing is uploaded — files stay on your machine."
-          action="Import media"
-        />
-      );
+      return <MediaPanel />;
     case 'projects':
-      return (
-        <EmptyState
-          icon={FolderOpen}
-          title="No projects"
-          description="Your projects are saved locally as .videodip archives."
-          action="New project"
-        />
-      );
+      return <ProjectsPanel />;
     case 'templates':
       return (
         <EmptyState
@@ -185,8 +186,228 @@ function PanelBody({ panel }: { panel: SidebarPanel }) {
         />
       );
     case 'settings':
-      return (
-        <EmptyState icon={Settings} title="Settings" description="Preferences and configuration." />
-      );
+      return <SettingsPanel />;
   }
+}
+
+const THEME_OPTIONS: readonly { mode: ThemeMode; label: string }[] = [
+  { mode: 'dark', label: 'Dark' },
+  { mode: 'light', label: 'Light' },
+  { mode: 'system', label: 'System' },
+];
+
+/**
+ * The Settings panel's real behaviour: a theme switcher.
+ *
+ * The theme engine itself (`packages/ui/theme/theme-provider.tsx`) has been
+ * complete since it was built — dark/light/system, persistence, OS sync,
+ * flash-prevention — but nothing in the app ever called `setMode`. This is
+ * that missing control, not new theme logic.
+ */
+function SettingsPanel() {
+  const { mode, setMode } = useTheme();
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs font-medium text-text-secondary">Appearance</p>
+      <div role="radiogroup" aria-label="Theme" className="flex gap-1">
+        {THEME_OPTIONS.map((option) => (
+          <Button
+            key={option.mode}
+            role="radio"
+            aria-checked={mode === option.mode}
+            variant={mode === option.mode ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setMode(option.mode)}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
+
+      <p className="mt-3 text-xs font-medium text-text-secondary">Aspect ratio</p>
+      <AspectRatioSelector />
+    </div>
+  );
+}
+
+const ASPECT_RATIOS: readonly AspectRatio[] = ['9:16', '3:4', '4:5', '16:9'];
+
+function AspectRatioSelector() {
+  const aspectRatio = useEditorStore((s) => s.aspectRatio);
+  const setAspectRatio = useEditorStore((s) => s.setAspectRatio);
+
+  return (
+    <div role="radiogroup" aria-label="Aspect ratio" className="flex flex-wrap gap-1">
+      {ASPECT_RATIOS.map((ratio) => (
+        <Button
+          key={ratio}
+          role="radio"
+          aria-checked={aspectRatio === ratio}
+          variant={aspectRatio === ratio ? 'secondary' : 'ghost'}
+          size="sm"
+          onClick={() => setAspectRatio(ratio)}
+        >
+          {ratio}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The Projects panel's real behaviour: starts a new in-memory project.
+ *
+ * No project list yet — this panel stays the empty state even after creating
+ * one, since there is nowhere else for a "current project" to live. Resets
+ * `project.store.ts`'s document too — a "new" project starting with the
+ * previous one's clips would be a bug, not a feature. The visible effect is
+ * the toolbar's project name, the unsaved-changes indicator, and the
+ * timeline clearing.
+ */
+function ProjectsPanel() {
+  const newProject = useEditorStore((s) => s.newProject);
+  const resetProject = useProjectStore((s) => s.reset);
+
+  const handleNewProject = () => {
+    newProject();
+    resetProject();
+  };
+
+  return (
+    <EmptyState
+      icon={FolderOpen}
+      title="No projects"
+      description="Your projects are saved locally as .videodip archives."
+      action="New project"
+      onAction={handleNewProject}
+    />
+  );
+}
+
+/**
+ * The Media panel's real behaviour: opens the native file picker, lists what
+ * has been imported, and places a clip on the video track at the playhead.
+ * Path + name only — no thumbnails or duration until `media-engine` gains
+ * real probing, which is also why every added clip is the same placeholder
+ * length.
+ */
+function MediaPanel() {
+  const mediaItems = useEditorStore((s) => s.mediaItems);
+  const addMediaItems = useEditorStore((s) => s.addMediaItems);
+  const playhead = useEditorStore((s) => s.playhead);
+  const timelineDocument = useProjectStore((s) => s.document);
+  const addClip = useProjectStore((s) => s.addClip);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
+
+  const handleImport = () => {
+    setImportError(null);
+    void importMedia().then((result) => {
+      if (result.ok) {
+        if (result.value.length > 0) addMediaItems(result.value);
+      } else {
+        setImportError(result.error.recovery);
+      }
+    });
+  };
+
+  const handleAddToTimeline = (assetId: (typeof mediaItems)[number]['id']) => {
+    setTimelineError(null);
+    const trackId = 'video' as TrackId;
+    // Place at the playhead when that spot is free, otherwise in the first
+    // gap after it — "add" should place the clip, not lecture the user about
+    // where their playhead is.
+    const start = findFreeStart(timelineDocument, trackId, playhead, DEFAULT_CLIP_DURATION);
+    if (!start.ok) {
+      setTimelineError(start.error.recovery);
+      return;
+    }
+    const result = addClip({
+      trackId,
+      assetId,
+      start: start.value,
+      duration: DEFAULT_CLIP_DURATION,
+    });
+    if (!result.ok) setTimelineError(result.error.recovery);
+  };
+
+  if (mediaItems.length === 0) {
+    return (
+      <>
+        <EmptyState
+          icon={Video}
+          title="No media yet"
+          description="Drop video or audio files here to get started. Nothing is uploaded — files stay on your machine."
+          action="Import media"
+          onAction={handleImport}
+        />
+        {importError && <PanelErrorNotice message={importError} />}
+      </>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {importError && <PanelErrorNotice message={importError} />}
+      {timelineError && <PanelErrorNotice message={timelineError} />}
+      <button
+        type="button"
+        onClick={handleImport}
+        className={cn(
+          'flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs',
+          'text-text-secondary transition-colors duration-[--duration-fast]',
+          'hover:bg-surface-hover hover:text-text-primary',
+          'focus-visible:outline-2 focus-visible:outline-offset-[-2px]',
+          'focus-visible:outline-[--color-border-focus]',
+        )}
+      >
+        <FolderOpen className="size-3.5" aria-hidden="true" />
+        Import more
+      </button>
+
+      <ul className="flex flex-col gap-0.5" aria-label="Imported media">
+        {mediaItems.map((item) => (
+          <li
+            key={item.id}
+            className={cn(
+              'group flex items-center gap-2 rounded-md px-2 py-1.5',
+              'text-xs text-text-primary hover:bg-surface-hover',
+            )}
+            title={item.path}
+          >
+            <Video className="size-3.5 shrink-0 text-text-tertiary" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate">{item.name}</span>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={`Add ${item.name} to the timeline`}
+              className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+              onClick={() => handleAddToTimeline(item.id)}
+              leadingIcon={<Plus />}
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * A recoverable-error message for a failed panel action (import, or placing
+ * a clip on the timeline).
+ *
+ * `role="alert"` so assistive tech announces it immediately — it appears in
+ * response to a user action, not on page load, so it must not wait for the
+ * user to stumble onto it.
+ */
+function PanelErrorNotice({ message }: { message: string }) {
+  return (
+    <p
+      role="alert"
+      className="rounded-md bg-danger-subtle px-2 py-1.5 text-xs text-danger"
+    >
+      {message}
+    </p>
+  );
 }

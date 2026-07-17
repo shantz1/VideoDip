@@ -1,6 +1,7 @@
 'use client';
 
-import type { Milliseconds } from '@videodip/shared';
+import type { MediaItem } from '@videodip/media-engine';
+import type { ClipId, Milliseconds } from '@videodip/shared';
 import { ms } from '@videodip/shared';
 import { create } from 'zustand';
 
@@ -29,6 +30,15 @@ export type SidebarPanel =
   | 'fonts'
   | 'plugins'
   | 'settings';
+
+/**
+ * Supported preview/export aspect ratios.
+ *
+ * A project-level setting, not a per-clip property — it belongs here rather
+ * than in the timeline domain model's per-clip data, same reasoning as
+ * `zoom`: it describes how the project is viewed, not what the project is.
+ */
+export type AspectRatio = '9:16' | '3:4' | '4:5' | '16:9';
 
 /** Right inspector tabs. */
 export type InspectorTab =
@@ -61,11 +71,34 @@ export interface EditorState {
   readonly zoom: number;
   readonly snapEnabled: boolean;
 
+  // --- Canvas ---
+  /** Drives the preview stage's shape and, eventually, the export frame size. */
+  readonly aspectRatio: AspectRatio;
+
+  // --- Selection ---
+  /**
+   * The clip the timeline toolbar's Split/Delete act on.
+   *
+   * Lives here, not in the project document (`project.store.ts`) — which
+   * clip is selected is a UI concern, not something worth an undo entry of
+   * its own.
+   */
+  readonly selectedClipId: ClipId | null;
+
   // --- Project ---
   /** PLACEHOLDER. Null until the project manager exists. */
   readonly projectName: string | null;
   /** Drives the "saved / unsaved" indicator. Autosave will own this. */
   readonly isDirty: boolean;
+
+  // --- Media pool ---
+  /**
+   * Media the user has imported, not yet placed on any timeline. This is the
+   * source library, distinct from the project document (clips, tracks,
+   * subtitles) that this store deliberately excludes — importing a file and
+   * placing it are different actions with different undo semantics.
+   */
+  readonly mediaItems: readonly MediaItem[];
 
   // --- Actions ---
   readonly setActivePanel: (panel: SidebarPanel) => void;
@@ -82,7 +115,20 @@ export interface EditorState {
   readonly zoomIn: () => void;
   readonly zoomOut: () => void;
   readonly toggleSnap: () => void;
+  readonly setAspectRatio: (ratio: AspectRatio) => void;
+  readonly selectClip: (clipId: ClipId | null) => void;
+  readonly addMediaItems: (items: readonly MediaItem[]) => void;
+  /**
+   * Starts a new, unnamed, in-memory project.
+   *
+   * No persistence yet — `packages/timeline` doesn't exist. Auto-increments
+   * "Untitled project" so repeated clicks are visibly distinct rather than a
+   * no-op.
+   */
+  readonly newProject: () => void;
 }
+
+const UNTITLED_PROJECT_PATTERN = /^Untitled project(?: (\d+))?$/;
 
 /** Zoom bounds in pixels per second. */
 const ZOOM_MIN = 5;
@@ -108,8 +154,14 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   zoom: ZOOM_DEFAULT,
   snapEnabled: true,
 
+  aspectRatio: '9:16',
+
+  selectedClipId: null,
+
   projectName: null,
   isDirty: false,
+
+  mediaItems: [],
 
   setActivePanel: (activePanel) =>
     set((state) => ({
@@ -144,4 +196,21 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   zoomOut: () => set((state) => ({ zoom: clamp(state.zoom / ZOOM_STEP, ZOOM_MIN, ZOOM_MAX) })),
 
   toggleSnap: () => set((state) => ({ snapEnabled: !state.snapEnabled })),
+
+  setAspectRatio: (aspectRatio) => set({ aspectRatio }),
+
+  selectClip: (selectedClipId) => set({ selectedClipId }),
+
+  addMediaItems: (items) =>
+    set((state) => ({ mediaItems: [...state.mediaItems, ...items] })),
+
+  newProject: () => {
+    const match = get().projectName?.match(UNTITLED_PROJECT_PATTERN);
+    const next = match ? Number(match[1] ?? '1') + 1 : 1;
+    set({
+      projectName: next === 1 ? 'Untitled project' : `Untitled project ${next}`,
+      isDirty: true,
+      selectedClipId: null,
+    });
+  },
 }));

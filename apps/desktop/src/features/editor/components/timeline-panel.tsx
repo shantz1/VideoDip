@@ -1,10 +1,12 @@
 'use client';
 
+import { ms } from '@videodip/shared';
+import { getDuration } from '@videodip/timeline';
 import { Button, cn } from '@videodip/ui';
 import { Magnet, Scissors, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 import { useEditorStore } from '../editor.store';
 import { formatTimecode } from '../lib/timecode';
-import { ms } from '@videodip/shared';
+import { useProjectStore } from '../project.store';
 
 /** Track rows, colored by the `--color-track-*` tokens. */
 const TRACKS = [
@@ -19,10 +21,10 @@ const HEADER_WIDTH = 112;
 /**
  * The timeline.
  *
- * PLACEHOLDER: renders the ruler, tracks and a seekable playhead against the
- * store's placeholder duration. There are no clips — clips require
- * `packages/timeline`, which owns the data model and the ripple/split/snap
- * operations. Everything here is view; none of it should grow editing logic.
+ * Renders real clips from `project.store.ts`'s document — ruler, tracks,
+ * playhead and now clips themselves. Placing, moving and trimming clips by
+ * drag is not built yet; clips are placed via the Media panel and adjusted
+ * via the Split/Delete toolbar buttons on a selected clip.
  */
 export function TimelinePanel() {
   return (
@@ -45,11 +47,53 @@ function TimelineToolbar() {
   const zoomIn = useEditorStore((s) => s.zoomIn);
   const zoomOut = useEditorStore((s) => s.zoomOut);
   const toggleSnap = useEditorStore((s) => s.toggleSnap);
+  const selectedClipId = useEditorStore((s) => s.selectedClipId);
+  const selectClip = useEditorStore((s) => s.selectClip);
+  const playhead = useEditorStore((s) => s.playhead);
+  const document = useProjectStore((s) => s.document);
+  const removeClip = useProjectStore((s) => s.removeClip);
+  const splitClip = useProjectStore((s) => s.splitClip);
+
+  const selectedClip = selectedClipId
+    ? document.tracks.flatMap((t) => t.clips).find((c) => c.id === selectedClipId)
+    : undefined;
+
+  // The playhead must sit strictly inside the clip — splitting at an edge
+  // would produce one empty half, which `splitClip` itself rejects.
+  const canSplit =
+    selectedClip !== undefined &&
+    playhead > selectedClip.start &&
+    playhead < selectedClip.start + selectedClip.duration;
+
+  const handleDelete = () => {
+    if (!selectedClipId) return;
+    removeClip(selectedClipId);
+    selectClip(null);
+  };
+
+  const handleSplit = () => {
+    if (!selectedClipId || !canSplit) return;
+    if (splitClip(selectedClipId, playhead).ok) selectClip(null);
+  };
 
   return (
     <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border-subtle px-2">
-      <Button size="icon-sm" variant="ghost" aria-label="Split clip" leadingIcon={<Scissors />} />
-      <Button size="icon-sm" variant="ghost" aria-label="Delete clip" leadingIcon={<Trash2 />} />
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="Split clip at playhead"
+        disabled={!canSplit}
+        onClick={handleSplit}
+        leadingIcon={<Scissors />}
+      />
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="Delete clip"
+        disabled={!selectedClipId}
+        onClick={handleDelete}
+        leadingIcon={<Trash2 />}
+      />
 
       <div className="mx-1 h-4 w-px bg-border-subtle" />
 
@@ -99,10 +143,18 @@ function TrackHeaders() {
 
 function TimelineTracks() {
   const zoom = useEditorStore((s) => s.zoom);
-  const duration = useEditorStore((s) => s.duration);
+  const placeholderDuration = useEditorStore((s) => s.duration);
   const playhead = useEditorStore((s) => s.playhead);
   const seek = useEditorStore((s) => s.seek);
+  const selectedClipId = useEditorStore((s) => s.selectedClipId);
+  const selectClip = useEditorStore((s) => s.selectClip);
+  const mediaItems = useEditorStore((s) => s.mediaItems);
+  const projectDocument = useProjectStore((s) => s.document);
 
+  // The ruler must cover both the placeholder minimum and whatever real
+  // clips exist — a clip placed past the placeholder's 60s must stay visible
+  // and seekable rather than getting clipped by the ruler's own width.
+  const duration = Math.max(placeholderDuration, getDuration(projectDocument));
   const width = (duration / 1000) * zoom;
 
   /** Converts a click x-offset into a time and seeks there. */
@@ -112,28 +164,84 @@ function TimelineTracks() {
     seek(ms((x / zoom) * 1000));
   };
 
+  const mediaNameFor = (assetId: string): string =>
+    mediaItems.find((item) => item.id === assetId)?.name ?? 'Unknown clip';
+
   return (
     <div className="relative min-w-0 flex-1 overflow-x-auto">
       <div style={{ width, minWidth: '100%' }} className="relative">
         <Ruler zoom={zoom} duration={duration} onSeek={seekFromPointer} />
 
-        {TRACKS.map((track) => (
-          <div
-            key={track.id}
-            className="relative border-b border-border-subtle"
-            style={{
-              height: TRACK_HEIGHT,
-              // Vertical grid every second, drawn in CSS rather than as
-              // elements: at 60s and 400px/s that would be thousands of DOM
-              // nodes, and the timeline must hold 60fps while scrubbing.
-              backgroundImage: `repeating-linear-gradient(to right, var(--color-timeline-grid) 0 1px, transparent 1px ${zoom}px)`,
-            }}
-          />
-        ))}
+        {TRACKS.map((track) => {
+          const documentTrack = projectDocument.tracks.find((t) => t.id === track.id);
+          return (
+            <div
+              key={track.id}
+              className="relative border-b border-border-subtle"
+              style={{
+                height: TRACK_HEIGHT,
+                // Vertical grid every second, drawn in CSS rather than as
+                // elements: at 60s and 400px/s that would be thousands of DOM
+                // nodes, and the timeline must hold 60fps while scrubbing.
+                backgroundImage: `repeating-linear-gradient(to right, var(--color-timeline-grid) 0 1px, transparent 1px ${zoom}px)`,
+              }}
+            >
+              {documentTrack?.clips.map((clip) => (
+                <TimelineClip
+                  key={clip.id}
+                  label={mediaNameFor(clip.assetId)}
+                  color={track.color}
+                  left={(clip.start / 1000) * zoom}
+                  width={(clip.duration / 1000) * zoom}
+                  selected={clip.id === selectedClipId}
+                  onSelect={() => selectClip(clip.id)}
+                />
+              ))}
+            </div>
+          );
+        })}
 
         <Playhead x={(playhead / 1000) * zoom} />
       </div>
     </div>
+  );
+}
+
+function TimelineClip({
+  label,
+  color,
+  left,
+  width,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  color: string;
+  left: number;
+  width: number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      title={label}
+      className={cn(
+        'absolute top-1 bottom-1 overflow-hidden rounded-sm px-1.5 text-left text-2xs text-text-on-brand',
+        'transition-shadow duration-[--duration-fast]',
+        'focus-visible:outline-2 focus-visible:outline-offset-2',
+        'focus-visible:outline-[--color-border-focus]',
+        color,
+        selected
+          ? 'ring-2 ring-[--color-border-focus] ring-offset-1 ring-offset-surface-base'
+          : 'hover:brightness-110',
+      )}
+      // Guard against a sliver too thin to click at extreme zoom-out.
+      style={{ left, width: Math.max(width, 4) }}
+    >
+      <span className="truncate">{label}</span>
+    </button>
   );
 }
 
