@@ -74,8 +74,8 @@ ambition, an "online Filmora."
 | Media import via native file picker | ✅ | Tauri dialog plugin; media pool in the sidebar |
 | Add-to-timeline placement (playhead if free, else first gap) | ✅ | `findFreeStart`; no more CONFLICT rejections from the media pool |
 | Clips rendered on the timeline, select / split / delete | ✅ | Wired to real domain ops |
-| Real media duration on import (probing) | 🔨 | **Current "Now" item.** Every clip is a placeholder 5 s until `media-engine` probes files (FFmpeg/ffprobe behind a Tauri command) |
-| Drag-to-move and drag-to-trim clips on the timeline | ⬜ | Domain ops exist; UI interaction not built |
+| Real media duration on import (probing) | ✅ | Read through the platform decoder on import (never invented); FFprobe fallback for undecodable containers still queued |
+| Drag-to-move and drag-to-trim clips on the timeline | ✅ | Commits through the domain ops, participates in undo/redo, snapping supported |
 | Live preview — Remotion player driven by the timeline document | ✅ | `apps/renderer` composition + `preview-player.tsx`, two-way transport sync |
 | Configurable aspect ratio (9:16, 3:4, 4:5, 16:9) | ✅ | |
 | `packages/media-engine` — `MediaItem` slice | ✅ | 5 tests |
@@ -85,7 +85,7 @@ ambition, an "online Filmora."
 | Project persistence — SQLite via Rust | 🧭→⬜ | Decision made (ADR-0004); implementation not started |
 | `.videodip` project archive format (project.json, assets, cache, previews, subtitles) | ⬜ | Per TDD; depends on persistence |
 | Project manager — list, open, autosave | 🔨 | "New project" (name + dirty flag) only; no save/load/list |
-| Undo/redo | ⬜ | Constitution: every destructive action undoable or confirmed |
+| Undo/redo | ✅ | Past/future history in the project store; toolbar buttons + Ctrl+Z/Ctrl+Shift+Z through the registry |
 | Audio engine (volume, fades, waveform display) | ⬜ | |
 | Performance budgets measured (cold start < 2 s, scrub 60 fps @ 4K, seek < 100 ms, idle RAM < 400 MB) | ⬜ | Nothing measured yet |
 
@@ -107,9 +107,9 @@ ambition, an "online Filmora."
 | --- | --- | --- |
 | `apps/renderer` — Remotion composition, headless-drivable | 🔨 | Composition exists and drives the preview; headless rendering not exercised |
 | Headless export runtime | 🧭 | `@remotion/renderer` needs Node; desktop has none (ADR-0004 world). Likely a Tauri sidecar process. **ADR required.** Same issue blocks BullMQ/Redis on desktop |
-| Export pipeline: timeline → composition → FFmpeg encode → file | ⬜ | Per TDD rendering pipeline |
-| Multi-platform export presets (TikTok/Reels/Shorts sizes, bitrates) | ⬜ | |
-| Real progress reporting during export (percentage, not spinner) | ⬜ | Constitution requirement |
+| Export pipeline: timeline → FFmpeg encode → MP4 on disk | ✅ | v0.1 cuts-only path shipped 2026-07-17: pure argv builder in `media-engine` (tested), Rust `export_video` command, verified against real FFmpeg (exact-duration 1080×1920 output). Remotion-composited export (subtitles/effects burned in) still needs the Node-sidecar ADR |
+| Multi-platform export presets (TikTok/Reels/Shorts sizes, bitrates) | 🔨 | Aspect-ratio-driven geometry (1080 short edge) shipped; named presets/bitrate tiers not |
+| Real progress reporting during export (percentage, not spinner) | ✅ | FFmpeg `-progress` parsed in Rust, streamed to the UI as a percentage |
 | `packages/template-engine` — template resolution/composition | ⬜ | Package doesn't exist yet |
 | Templates as Zod-validated JSON (data, not code) | ⬜ | |
 | Export history | ⬜ | Per TDD DB schema |
