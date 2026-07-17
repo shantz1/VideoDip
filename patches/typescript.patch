@@ -1,0 +1,22 @@
+diff --git a/lib/typescript.js b/lib/typescript.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..69e83d0aad3fa5c7a1221ddce37f6d824ea1eec4
+--- /dev/null
++++ b/lib/typescript.js
+@@ -0,0 +1,16 @@
++// Compatibility stub, not the real compiler API.
++//
++// TypeScript 7 restructured its package and no longer ships this legacy path
++// (see dist/api/* and the "unstable/*" exports in package.json instead). This
++// file exists only so tools that check for it via `existsSync` — notably
++// Next.js's build-time TypeScript detection — see a real package rather than
++// concluding TypeScript is missing and attempting a pointless reinstall.
++//
++// It must never be silently `require()`d for real work: throw loudly instead
++// of returning something that looks like the classic compiler API but isn't.
++throw new Error(
++  'typescript/lib/typescript.js is a compatibility stub for TypeScript 7 (see ' +
++    'docs/adr/0005-next-build-typecheck-disabled-for-typescript-7.md). It exists ' +
++    "only to satisfy Next's build-time existsSync check and carries no API. " +
++    'Import from "typescript" directly, or one of its "unstable/*" entry points.',
++);

@@ -38,7 +38,8 @@ catalog:
 
   # --- Desktop ---
   "@tauri-apps/cli": 2.11.4
-  "@tauri-apps/api": 2.9.0
+  "@tauri-apps/api": 2.11.1
+  "@tauri-apps/plugin-dialog": 2.7.1
 
   # --- Backend ---
   "@nestjs/core": 11.1.28
@@ -75,3 +76,13 @@ catalog:
 # installs cleanly and then fails at runtime.
 onlyBuiltDependencies:
   - esbuild
+
+# TypeScript 7 restructured its package and no longer ships `lib/typescript.js`
+# (see docs/adr/0005-...typescript-7.md). Next's build-time TypeScript
+# detection hardcodes a check for that exact path; without this patch every
+# `next build` wrongly concludes TypeScript is missing, attempts a pointless
+# reinstall, and — worse — that reinstall rewrites this very file, destroying
+# these comments. The patch adds a stub `lib/typescript.js` that exists only to
+# satisfy the check; it throws if anything actually tries to use it.
+patchedDependencies:
+  typescript: patches/typescript.patch
