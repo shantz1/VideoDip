@@ -24,6 +24,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "prettier": "catalog:",
+    "prettier-plugin-tailwindcss": "catalog:",
     "rimraf": "6.1.2",
     "turbo": "catalog:",
     "typescript": "catalog:"

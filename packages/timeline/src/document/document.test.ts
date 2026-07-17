@@ -2,11 +2,15 @@ import { ms, type AssetId } from '@videodip/shared';
 import { describe, expect, it } from 'vitest';
 import {
   addClip,
-  createEmptyTimeline,
+  addTrack,
+  createTimeline,
+  createTrack,
   findFreeStart,
   getDuration,
   moveClip,
   removeClip,
+  removeTrack,
+  reorderTrack,
   splitClip,
   trimClip,
 } from './document.service.js';
@@ -17,11 +21,75 @@ const ASSET_B = 'asset-b' as AssetId;
 const VIDEO: TrackId = 'video' as TrackId;
 const AUDIO: TrackId = 'audio' as TrackId;
 
-describe('createEmptyTimeline', () => {
-  it('creates exactly the three fixed tracks, all empty', () => {
-    const doc = createEmptyTimeline();
-    expect(doc.tracks.map((t) => t.id)).toEqual(['video', 'subtitle', 'audio']);
-    expect(doc.tracks.every((t) => t.clips.length === 0)).toBe(true);
+function createEmptyTimeline() {
+  return createTimeline([
+    createTrack({ id: VIDEO, kind: 'video', label: 'Video' }),
+    createTrack({ id: 'subtitle' as TrackId, kind: 'subtitle', label: 'Subtitles' }),
+    createTrack({ id: AUDIO, kind: 'audio', label: 'Audio' }),
+  ]);
+}
+
+describe('generic tracks', () => {
+  it('creates a timeline with no domain-defined tracks', () => {
+    expect(createTimeline().tracks).toEqual([]);
+  });
+
+  it('preserves arbitrary consumer-defined kinds and order', () => {
+    const doc = createTimeline([
+      createTrack({ id: 'captions' as TrackId, kind: 'subtitle', label: 'Captions' }),
+      createTrack({ id: 'plugin-layer' as TrackId, kind: 'plugin:mask', label: 'Mask' }),
+    ]);
+
+    expect(doc.tracks.map((track) => track.kind)).toEqual(['subtitle', 'plugin:mask']);
+  });
+
+  it('adds a track at an explicit visual index', () => {
+    const result = addTrack(createEmptyTimeline(), { kind: 'overlay', label: 'Overlay' }, 1);
+    const doc = unwrap(result);
+
+    expect(doc.tracks.map((track) => track.kind)).toEqual([
+      'video',
+      'overlay',
+      'subtitle',
+      'audio',
+    ]);
+  });
+
+  it('rejects duplicate track ids', () => {
+    const result = addTrack(createEmptyTimeline(), {
+      id: VIDEO,
+      kind: 'overlay',
+      label: 'Duplicate',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('CONFLICT');
+  });
+
+  it('reorders tracks without changing their contents', () => {
+    const result = reorderTrack(createEmptyTimeline(), AUDIO, 0);
+
+    expect(unwrap(result).tracks.map((track) => track.id)).toEqual([AUDIO, VIDEO, 'subtitle']);
+  });
+
+  it('removes an empty track', () => {
+    const result = removeTrack(createEmptyTimeline(), AUDIO);
+    expect(unwrap(result).tracks.some((track) => track.id === AUDIO)).toBe(false);
+  });
+
+  it('refuses to remove a track containing clips', () => {
+    const document = unwrap(
+      addClip(createEmptyTimeline(), {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+      }),
+    );
+    const result = removeTrack(document, VIDEO);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('CONFLICT');
   });
 });
 
@@ -78,6 +146,24 @@ describe('addClip', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('NOT_FOUND');
+  });
+
+  it('rejects negative, zero-length, and non-finite clip timing', () => {
+    const invalidInputs = [
+      { start: ms(-1), duration: ms(1000) },
+      { start: ms(0), duration: ms(0) },
+      { start: ms(Number.NaN), duration: ms(1000) },
+    ];
+
+    for (const timing of invalidInputs) {
+      const result = addClip(createEmptyTimeline(), {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        ...timing,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('VALIDATION');
+    }
   });
 
   it('rejects a clip that overlaps an existing one on the same track', () => {
@@ -196,6 +282,12 @@ describe('findFreeStart', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('NOT_FOUND');
   });
+
+  it('rejects invalid placement timing', () => {
+    const result = findFreeStart(createEmptyTimeline(), VIDEO, ms(-1), ms(1000));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('VALIDATION');
+  });
 });
 
 describe('removeClip', () => {
@@ -270,6 +362,23 @@ describe('moveClip', () => {
     const result = moveClip(createEmptyTimeline(), 'missing' as never, ms(0));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('NOT_FOUND');
+  });
+
+  it('rejects moving a clip before zero', () => {
+    let document = createEmptyTimeline();
+    document = unwrap(
+      addClip(document, {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+      }),
+    );
+    const clipId = document.tracks[0]!.clips[0]!.id;
+
+    const result = moveClip(document, clipId, ms(-1));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('VALIDATION');
   });
 });
 

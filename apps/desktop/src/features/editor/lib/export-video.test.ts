@@ -1,11 +1,15 @@
 import { ms, type AssetId, type TrackId } from '@videodip/shared';
-import { addClip, createEmptyTimeline } from '@videodip/timeline';
+import { addClip, createTimeline, createTrack } from '@videodip/timeline';
 import { describe, expect, it } from 'vitest';
 import { exportFrameSize, toExportClips } from './export-video';
 
 const ASSET_A = 'asset-a' as AssetId;
 const ASSET_B = 'asset-b' as AssetId;
 const VIDEO = 'video' as TrackId;
+
+function createEmptyTimeline() {
+  return createTimeline([createTrack({ id: VIDEO, kind: 'video', label: 'Video' })]);
+}
 
 function unwrap<T>(result: import('@videodip/shared').Result<T>): T {
   if (!result.ok) throw new Error(`Expected ok, got error: ${result.error.message}`);

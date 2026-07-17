@@ -7,15 +7,25 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
 
 ## Now
 
-- [ ] **Durable project persistence + autosave** — the timeline document and
-      media pool are real in-memory state, but `.videodip` archive loading and
-      SQLite-backed autosave are still the next project-level slice.
-- [ ] **FFprobe metadata fallback** — import now reads real duration through
-      the platform media decoder and never invents metadata. Containers the
-      webview cannot decode remain explicitly “duration unknown” and use a 5s
-      placement fallback until bundled FFprobe probing lands.
+- [ ] **Project browser + portable `.videodip` archives** — durable local
+      snapshots and autosave are complete. Add the list/open/rename/delete UI,
+      then the portable archive container (`project.json`, subtitles, previews,
+      cache manifest and optional packaged assets) without changing the shared
+      editor state model.
+- [ ] **Cancellable media workers** — add cancellation/timeouts and bounded
+      concurrency before thumbnail and waveform generation. The worker/cache
+      pipeline must stay behind the Media Engine ports and be measured before
+      optimization.
 
 ## Queued (user-requested, not yet started)
+
+- [ ] **Multilingual Whisper acceptance matrix** — all languages exposed by
+      the bundled multilingual model remain selectable, with explicit
+      accuracy/performance fixtures for English, Hindi, Marathi, Tamil, Telugu,
+      Gujarati and Bengali plus code-switching and a representative foreign
+      language set. Transcription in the source language and translation are
+      separate features; Whisper translation-to-English must not be presented
+      as general language-to-language translation.
 
 - [ ] **Versioning + automatic client updates** (asked 2026-07-17, reaffirmed
       same day: the client must download and apply updates itself when one
@@ -49,6 +59,85 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
       before implementation starts, not just a wired button.
 
 ## Done (this session, 2026-07-17)
+
+- **Durable project snapshots + autosave** — added a strict versioned project
+  schema, bundled SQLite/WAL storage and CRUD commands in Rust, matching Tauri
+  and browser repositories behind the shared `ProjectRepository` port, newest
+  project restore, and 750 ms debounced autosave. Revision-aware save
+  completion cannot mark newer edits clean. Storage failures remain visible
+  and recoverable; portable `.videodip` archives and the project-picker UI are
+  intentionally still queued.
+
+- **Package-by-package architecture pass complete** — Timeline, Shared, Media
+  Engine, Renderer, Desktop editor, and Plugin SDK were reviewed in the agreed
+  order and left independently testable. Final verification passes all 19
+  Turbo tasks, the optimized Next desktop build, Rust formatting/check, and
+  `git diff --check`.
+
+- **Plugin SDK contract (ADR-0009)** — added the public
+  `@videodip/plugin-sdk` workspace with strict namespaced/semver manifests,
+  declared extension surfaces, capability-subset grants, per-request
+  authorization, JSON-only host/sandbox messages, cancellation-aware lifecycle
+  context, and 14 tests. The SDK does not pretend to execute untrusted code;
+  isolation, signatures, quotas, timeouts, and crash recovery remain explicit
+  runtime work before third-party plugins can be enabled.
+
+- **Desktop editor deep review** — the reusable React editor no longer imports
+  Tauri APIs. Media import/source resolution, export, and fullscreen are
+  segregated host capabilities injected through one provider selected at the
+  application boundary. A browser adapter can replace capabilities without
+  copying UI, stores, controllers, or domain packages. The existing browser
+  preview still reports unsupported import/export until those adapters are
+  implemented. Verified with 93 desktop tests and typecheck.
+
+- **Renderer deep review** — track metadata no longer decides render behavior;
+  each resolved asset supplies its own video/audio capability, so arbitrary
+  overlay/plugin track kinds render correctly. Composition clips and settings
+  now form one Zod-validated serializable contract, and Remotion metadata uses
+  the same fps/dimensions/duration passed to the live Player. Stable memoized
+  Player props avoid unnecessary media resets during playhead updates. Renderer
+  has its first 4 contract/dispatch tests.
+- **Ctrl/Cmd + wheel timeline zoom** — scrolling over the timeline while the
+  platform modifier is held zooms through the existing bounded store actions,
+  prevents browser page zoom, and preserves the time beneath the pointer.
+  Plain scrolling is untouched; desktop now passes 91 tests.
+
+- **Media Engine deep review** — media identity now uses opaque cross-host
+  locators instead of desktop paths; imports retain normalized container and
+  stream metadata; FFprobe argument building and Zod parsing stay pure; and a
+  thin Rust/Tauri adapter performs native probing only when the platform decoder
+  cannot. Export compilation rejects invalid inputs before process launch.
+  Verified with 24 Media Engine tests, 89 desktop tests, Rust formatting/check,
+  the full 17-task workspace verification, and a production desktop build.
+
+- **Shared package deep review** — added Zod validation schemas for branded
+  units and identifiers; segregated media import/source, project repository,
+  and video export ports for desktop/browser substitution; introduced opaque
+  media locators; and corrected transcription capability/readiness methods to
+  return typed `Result`s. Shared remains React/Tauri/browser/provider-free and
+  passes 31 tests.
+- **Repository formatting restored** — the existing Prettier config required
+  `prettier-plugin-tailwindcss` but the package was absent. Version 0.8.1 is now
+  catalog-pinned and installed, and changed files format successfully.
+
+- **Generic, extensible timeline tracks** — removed the domain's fixed
+  Video/Subtitle/Audio invariant. Tracks now have open `kind` metadata and
+  arbitrary count/order, with pure add/remove/reorder operations. Empty-track
+  removal is safe; non-empty removal is rejected. Desktop rows derive from the
+  document, media placement resolves a track by kind rather than assuming its
+  id, and renderer layer order derives from track order. Timing boundaries now
+  reject negative, zero-length, NaN, and infinite values. Verified with 41
+  timeline tests, 87 desktop tests, and typechecks across timeline, renderer,
+  and desktop.
+- **Visible timeline clips + fit control** — clip backgrounds now use generated
+  semantic track-color utilities in dark and light themes. Plugin-defined kinds
+  get a visible accent fallback. A measured “Fit timeline to view” control sits
+  before Zoom Out and derives zoom from viewport width and project duration. A
+  Filmora-style scissors control on the playhead splits the selected clip at
+  that exact time through the same undoable timeline operation.
+- **One editor architecture accepted (ADR-0008)** — reusable editor
+  UI/state/controllers will be shared; Tauri and browser behavior lives in thin
+  injected adapters. This does not authorize cloud rendering or account gating.
 
 - **Core editor interactions wired end to end** — real media type/duration,
   correct audio/video track routing, project-derived transport duration,

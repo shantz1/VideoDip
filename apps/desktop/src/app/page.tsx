@@ -1,4 +1,5 @@
 import { EditorShell } from '@/features/editor/components/editor-shell';
+import { PlatformEditorHostProvider } from '@/features/editor/host/platform-editor-host';
 
 /**
  * The editor.
@@ -8,5 +9,9 @@ import { EditorShell } from '@/features/editor/components/editor-shell';
  * not expect.
  */
 export default function EditorPage() {
-  return <EditorShell />;
+  return (
+    <PlatformEditorHostProvider>
+      <EditorShell />
+    </PlatformEditorHostProvider>
+  );
 }

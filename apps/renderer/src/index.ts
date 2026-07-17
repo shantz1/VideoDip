@@ -6,4 +6,13 @@
  * render` drives the same component headlessly for export. Only what is
  * re-exported here is public.
  */
-export { VideoDipComposition, type CompositionClip, type VideoDipCompositionProps } from './composition.js';
+export {
+  compositionClipSchema,
+  compositionSettingsSchema,
+  getCompositionMetadata,
+  videoDipCompositionSchema,
+  VideoDipComposition,
+  type CompositionClip,
+  type CompositionSettings,
+  type VideoDipCompositionProps,
+} from './composition.js';

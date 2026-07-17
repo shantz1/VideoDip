@@ -22,7 +22,8 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
-    "@videodip/shared": "workspace:*"
+    "@videodip/shared": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

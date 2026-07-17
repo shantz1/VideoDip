@@ -3,24 +3,21 @@
 import { ms, type Milliseconds } from '@videodip/shared';
 import { getDuration, type Clip, type TrimEdge } from '@videodip/timeline';
 import { Button, cn } from '@videodip/ui';
-import { Magnet, Scissors, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
-import { useRef, useState, type PointerEvent } from 'react';
+import { Magnet, Maximize2, Scissors, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
+import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { useEditorStore } from '../editor.store';
+import {
+  calculateAnchoredScrollLeft,
+  calculateFitZoom,
+  MIN_VIEW_DURATION,
+  trackColorClass,
+} from '../lib/timeline-presentation';
 import { formatTimecode } from '../lib/timecode';
 import { snapTimelineTime } from '../lib/timeline-snap';
 import { useProjectStore } from '../project.store';
 
-/** Track rows, colored by the `--color-track-*` tokens. */
-const TRACKS = [
-  { id: 'subtitle', label: 'Subtitles', color: 'bg-[--color-track-subtitle]' },
-  { id: 'video', label: 'Video', color: 'bg-[--color-track-video]' },
-  { id: 'audio', label: 'Audio', color: 'bg-[--color-track-audio]' },
-] as const;
-
 const TRACK_HEIGHT = 44;
 const HEADER_WIDTH = 112;
-/** Empty-canvas space available for placing the first clip. */
-const MIN_VIEW_DURATION = ms(10_000);
 
 /**
  * The timeline.
@@ -30,25 +27,40 @@ const MIN_VIEW_DURATION = ms(10_000);
  * split and deleted; all document mutations stay in the timeline domain.
  */
 export function TimelinePanel() {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [viewportWidth, setViewportWidth] = useState(0);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const updateWidth = () => setViewportWidth(viewport.clientWidth);
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <section
-      className="flex h-64 shrink-0 flex-col border-t border-border-subtle bg-surface-base"
+      className="border-border-subtle bg-surface-base flex h-64 shrink-0 flex-col border-t"
       aria-label="Timeline"
     >
-      <TimelineToolbar />
-      <div className="flex min-h-0 flex-1">
+      <TimelineToolbar viewportWidth={viewportWidth} />
+      <div className="flex min-h-0 flex-1 overflow-y-auto">
         <TrackHeaders />
-        <TimelineTracks />
+        <TimelineTracks viewportRef={viewportRef} />
       </div>
     </section>
   );
 }
 
-function TimelineToolbar() {
+function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
   const zoom = useEditorStore((s) => s.zoom);
   const snapEnabled = useEditorStore((s) => s.snapEnabled);
   const zoomIn = useEditorStore((s) => s.zoomIn);
   const zoomOut = useEditorStore((s) => s.zoomOut);
+  const setZoom = useEditorStore((s) => s.setZoom);
   const toggleSnap = useEditorStore((s) => s.toggleSnap);
   const selectedClipId = useEditorStore((s) => s.selectedClipId);
   const selectClip = useEditorStore((s) => s.selectClip);
@@ -56,6 +68,11 @@ function TimelineToolbar() {
   const document = useProjectStore((s) => s.document);
   const removeClip = useProjectStore((s) => s.removeClip);
   const splitClip = useProjectStore((s) => s.splitClip);
+
+  const fitTimeline = () => {
+    if (viewportWidth <= 0) return;
+    setZoom(calculateFitZoom(viewportWidth, getDuration(document)));
+  };
 
   const selectedClip = selectedClipId
     ? document.tracks.flatMap((t) => t.clips).find((c) => c.id === selectedClipId)
@@ -80,7 +97,7 @@ function TimelineToolbar() {
   };
 
   return (
-    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border-subtle px-2">
+    <div className="border-border-subtle flex h-9 shrink-0 items-center gap-1 border-b px-2">
       <Button
         size="icon-sm"
         variant="ghost"
@@ -98,7 +115,7 @@ function TimelineToolbar() {
         leadingIcon={<Trash2 />}
       />
 
-      <div className="mx-1 h-4 w-px bg-border-subtle" />
+      <div className="bg-border-subtle mx-1 h-4 w-px" />
 
       <Button
         size="icon-sm"
@@ -115,17 +132,28 @@ function TimelineToolbar() {
         <Button
           size="icon-sm"
           variant="ghost"
+          aria-label="Fit timeline to view"
+          title="Fit timeline to view"
+          disabled={viewportWidth <= 0}
+          onClick={fitTimeline}
+          leadingIcon={<Maximize2 />}
+        />
+        <Button
+          size="icon-sm"
+          variant="ghost"
           aria-label="Zoom out"
+          title="Zoom out (Ctrl/Cmd + scroll down)"
           onClick={zoomOut}
           leadingIcon={<ZoomOut />}
         />
-        <span className="w-14 text-center font-mono text-2xs tabular-nums text-text-tertiary">
+        <span className="text-2xs text-text-tertiary w-14 text-center font-mono tabular-nums">
           {Math.round(zoom)} px/s
         </span>
         <Button
           size="icon-sm"
           variant="ghost"
           aria-label="Zoom in"
+          title="Zoom in (Ctrl/Cmd + scroll up)"
           onClick={zoomIn}
           leadingIcon={<ZoomIn />}
         />
@@ -135,26 +163,33 @@ function TimelineToolbar() {
 }
 
 function TrackHeaders() {
+  const tracks = useProjectStore((state) => state.document.tracks);
+
   return (
-    <div className="shrink-0 border-r border-border-subtle" style={{ width: HEADER_WIDTH }}>
+    <div className="border-border-subtle shrink-0 border-r" style={{ width: HEADER_WIDTH }}>
       {/* Spacer aligning headers with the ruler. */}
-      <div className="h-6 border-b border-border-subtle" />
-      {TRACKS.map((track) => (
+      <div className="border-border-subtle h-6 border-b" />
+      {tracks.map((track) => (
         <div
           key={track.id}
-          className="flex items-center gap-2 border-b border-border-subtle px-2"
+          className="border-border-subtle flex items-center gap-2 border-b px-2"
           style={{ height: TRACK_HEIGHT }}
         >
-          <span className={cn('h-4 w-0.5 rounded-full', track.color)} aria-hidden="true" />
-          <span className="truncate text-xs text-text-secondary">{track.label}</span>
+          <span
+            className={cn('h-4 w-0.5 rounded-full', trackColorClass(track.kind))}
+            aria-hidden="true"
+          />
+          <span className="text-text-secondary truncate text-xs">{track.label}</span>
         </div>
       ))}
     </div>
   );
 }
 
-function TimelineTracks() {
+function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivElement | null> }) {
   const zoom = useEditorStore((s) => s.zoom);
+  const zoomIn = useEditorStore((s) => s.zoomIn);
+  const zoomOut = useEditorStore((s) => s.zoomOut);
   const playhead = useEditorStore((s) => s.playhead);
   const seek = useEditorStore((s) => s.seek);
   const selectedClipId = useEditorStore((s) => s.selectedClipId);
@@ -163,8 +198,51 @@ function TimelineTracks() {
   const projectDocument = useProjectStore((s) => s.document);
   const moveClip = useProjectStore((s) => s.moveClip);
   const trimClip = useProjectStore((s) => s.trimClip);
+  const splitClip = useProjectStore((s) => s.splitClip);
   const snapEnabled = useEditorStore((s) => s.snapEnabled);
   const [editError, setEditError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      if ((!event.ctrlKey && !event.metaKey) || event.deltaY === 0) return;
+      event.preventDefault();
+
+      const pointerX = event.clientX - viewport.getBoundingClientRect().left;
+      const previousZoom = useEditorStore.getState().zoom;
+      if (event.deltaY < 0) zoomIn();
+      else zoomOut();
+      const nextZoom = useEditorStore.getState().zoom;
+      viewport.scrollLeft = calculateAnchoredScrollLeft(
+        viewport.scrollLeft,
+        pointerX,
+        previousZoom,
+        nextZoom,
+      );
+    };
+
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    return () => viewport.removeEventListener('wheel', handleWheel);
+  }, [viewportRef, zoomIn, zoomOut]);
+
+  const selectedClip = selectedClipId
+    ? projectDocument.tracks
+        .flatMap((track) => track.clips)
+        .find((clip) => clip.id === selectedClipId)
+    : undefined;
+  const canSplitAtPlayhead =
+    selectedClip !== undefined &&
+    playhead > selectedClip.start &&
+    playhead < selectedClip.start + selectedClip.duration;
+
+  const splitAtPlayhead = () => {
+    if (!selectedClipId || !canSplitAtPlayhead) return;
+    const result = splitClip(selectedClipId, playhead);
+    setEditError(result.ok ? null : result.error.recovery);
+    if (result.ok) selectClip(null);
+  };
 
   // The ruler must cover both the placeholder minimum and whatever real
   // clips exist — a clip placed past the placeholder's 60s must stay visible
@@ -194,11 +272,11 @@ function TimelineTracks() {
   ];
 
   return (
-    <div className="relative min-w-0 flex-1 overflow-x-auto">
+    <div ref={viewportRef} className="relative min-w-0 flex-1 overflow-x-auto">
       {editError && (
         <p
           role="alert"
-          className="sticky left-2 z-[--z-dropdown] float-left mt-1 rounded-md bg-danger-subtle px-2 py-1 text-xs text-danger"
+          className="bg-danger-subtle text-danger sticky left-2 z-[--z-dropdown] float-left mt-1 rounded-md px-2 py-1 text-xs"
         >
           {editError}
         </p>
@@ -206,12 +284,12 @@ function TimelineTracks() {
       <div style={{ width, minWidth: '100%' }} className="relative">
         <Ruler zoom={zoom} duration={viewDuration} playhead={playhead} onSeek={seekFromPointer} />
 
-        {TRACKS.map((track) => {
-          const documentTrack = projectDocument.tracks.find((t) => t.id === track.id);
+        {projectDocument.tracks.map((track) => {
+          const color = trackColorClass(track.kind);
           return (
             <div
               key={track.id}
-              className="relative border-b border-border-subtle"
+              className="border-border-subtle relative border-b"
               style={{
                 height: TRACK_HEIGHT,
                 // Vertical grid every second, drawn in CSS rather than as
@@ -220,11 +298,11 @@ function TimelineTracks() {
                 backgroundImage: `repeating-linear-gradient(to right, var(--color-timeline-grid) 0 1px, transparent 1px ${zoom}px)`,
               }}
             >
-              {documentTrack?.clips.map((clip) => (
+              {track.clips.map((clip) => (
                 <TimelineClip
                   key={clip.id}
                   label={mediaNameFor(clip.assetId)}
-                  color={track.color}
+                  color={color}
                   clip={clip}
                   zoom={zoom}
                   snapEnabled={snapEnabled}
@@ -245,7 +323,11 @@ function TimelineTracks() {
           );
         })}
 
-        <Playhead x={(playhead / 1000) * zoom} />
+        <Playhead
+          x={(playhead / 1000) * zoom}
+          canSplit={canSplitAtPlayhead}
+          onSplit={splitAtPlayhead}
+        />
       </div>
     </div>
   );
@@ -368,13 +450,13 @@ function TimelineClip({
       title={label}
       aria-label={`${label}, ${(clip.duration / 1000).toFixed(2)} seconds`}
       className={cn(
-        'group absolute top-1 bottom-1 cursor-grab touch-none overflow-hidden rounded-sm px-1.5 text-left text-2xs text-text-on-brand active:cursor-grabbing',
+        'group text-2xs text-text-on-brand absolute top-1 bottom-1 cursor-grab touch-none overflow-hidden rounded-sm px-1.5 text-left active:cursor-grabbing',
         'transition-shadow duration-[--duration-fast]',
         'focus-visible:outline-2 focus-visible:outline-offset-2',
         'focus-visible:outline-[--color-border-focus]',
         color,
         selected
-          ? 'ring-2 ring-[--color-border-focus] ring-offset-1 ring-offset-surface-base'
+          ? 'ring-offset-surface-base ring-2 ring-[--color-border-focus] ring-offset-1'
           : 'hover:brightness-110',
       )}
       // Guard against a sliver too thin to click at extreme zoom-out.
@@ -382,13 +464,13 @@ function TimelineClip({
     >
       <span
         data-trim-edge="start"
-        className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize bg-surface-overlay/40 opacity-0 group-hover:opacity-100"
+        className="bg-surface-overlay/40 absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100"
         aria-hidden="true"
       />
       <span className="truncate">{label}</span>
       <span
         data-trim-edge="end"
-        className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize bg-surface-overlay/40 opacity-0 group-hover:opacity-100"
+        className="bg-surface-overlay/40 absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100"
         aria-hidden="true"
       />
     </button>
@@ -414,7 +496,7 @@ function Ruler({
 
   return (
     <div
-      className="relative h-6 cursor-pointer border-b border-border-subtle bg-surface-raised"
+      className="border-border-subtle bg-surface-raised relative h-6 cursor-pointer border-b"
       onPointerDown={onSeek}
       role="slider"
       aria-label="Playhead position"
@@ -428,10 +510,10 @@ function Ruler({
         return (
           <div
             key={seconds}
-            className="absolute top-0 h-full border-l border-border-subtle pl-1"
+            className="border-border-subtle absolute top-0 h-full border-l pl-1"
             style={{ left: seconds * zoom }}
           >
-            <span className="font-mono text-2xs leading-6 text-text-tertiary tabular-nums">
+            <span className="text-2xs text-text-tertiary font-mono leading-6 tabular-nums">
               {formatTimecode(ms(seconds * 1000)).replace(/\.\d+$/, '')}
             </span>
           </div>
@@ -441,17 +523,29 @@ function Ruler({
   );
 }
 
-function Playhead({ x }: { x: number }) {
+function Playhead({ x, canSplit, onSplit }: { x: number; canSplit: boolean; onSplit: () => void }) {
   return (
     <div
       className={cn(
         'pointer-events-none absolute top-0 bottom-0 w-px',
-        'bg-[--color-timeline-playhead] z-[--z-timeline-playhead]',
+        'bg-timeline-playhead z-[--z-timeline-playhead]',
       )}
       style={{ left: x }}
-      aria-hidden="true"
     >
-      <div className="absolute -top-0 -left-[3px] size-[7px] rounded-[2px] bg-[--color-timeline-playhead]" />
+      <div
+        className="bg-timeline-playhead absolute -top-0 -left-[3px] size-[7px] rounded-[2px]"
+        aria-hidden="true"
+      />
+      <Button
+        size="icon-sm"
+        variant="danger"
+        aria-label="Split selected clip at playhead"
+        title={canSplit ? 'Split selected clip at playhead' : 'Select a clip under the playhead'}
+        disabled={!canSplit}
+        onClick={onSplit}
+        className="pointer-events-auto absolute top-7 -left-3 shadow-sm"
+        leadingIcon={<Scissors />}
+      />
     </div>
   );
 }

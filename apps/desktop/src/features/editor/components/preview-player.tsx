@@ -1,12 +1,12 @@
 'use client';
 
 import { Player, type PlayerRef } from '@remotion/player';
-import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { framesToMs, msToFrames, type AssetId } from '@videodip/shared';
 import { getDuration } from '@videodip/timeline';
 import { VideoDipComposition } from '@videodip/renderer';
 import { useEffect, useMemo, useRef } from 'react';
 import { useEditorStore, type AspectRatio } from '../editor.store';
+import { useEditorHost } from '../host/editor-host';
 import { PROJECT_FPS, toCompositionClips } from '../lib/composition-adapter';
 import { useProjectStore } from '../project.store';
 
@@ -45,6 +45,7 @@ const COMPOSITION_SIZE: Record<AspectRatio, { width: number; height: number }> =
  */
 export function PreviewPlayer() {
   const playerRef = useRef<PlayerRef>(null);
+  const { resolveMediaSource } = useEditorHost();
 
   const documentValue = useProjectStore((s) => s.document);
   const mediaItems = useEditorStore((s) => s.mediaItems);
@@ -55,18 +56,21 @@ export function PreviewPlayer() {
   const pause = useEditorStore((s) => s.pause);
 
   const clips = useMemo(() => {
-    const srcByAsset = new Map(mediaItems.map((item) => [item.id, item.path]));
-    const resolveSrc = (assetId: AssetId): string | undefined => {
-      const path = srcByAsset.get(assetId);
-      if (path === undefined) return undefined;
+    const mediaByAsset = new Map(mediaItems.map((item) => [item.id, item]));
+    const resolveAsset = (assetId: AssetId) => {
+      const item = mediaByAsset.get(assetId);
+      if (item === undefined) return undefined;
       // A raw OS path is not a loadable URL inside a webview; Tauri's asset
       // protocol makes it one. Outside Tauri there is no equivalent — the
       // path passes through and simply fails to load, which is fine: media
       // can only be imported inside the Tauri shell anyway.
-      return isTauri() ? convertFileSrc(path) : path;
+      return {
+        src: resolveMediaSource(item.locator),
+        mediaKind: item.kind,
+      };
     };
-    return toCompositionClips(documentValue, resolveSrc);
-  }, [documentValue, mediaItems]);
+    return toCompositionClips(documentValue, resolveAsset);
+  }, [documentValue, mediaItems, resolveMediaSource]);
 
   const durationInFrames = Math.max(1, msToFrames(getDuration(documentValue), PROJECT_FPS));
 
@@ -108,16 +112,21 @@ export function PreviewPlayer() {
   }, [seek, pause]);
 
   const { width, height } = COMPOSITION_SIZE[aspectRatio];
+  const settings = useMemo(
+    () => ({ fps: PROJECT_FPS, width, height, durationInFrames }),
+    [width, height, durationInFrames],
+  );
+  const inputProps = useMemo(() => ({ clips, settings }), [clips, settings]);
 
   return (
     <Player
       ref={playerRef}
       component={VideoDipComposition}
-      inputProps={{ clips }}
-      durationInFrames={durationInFrames}
-      fps={PROJECT_FPS}
-      compositionWidth={width}
-      compositionHeight={height}
+      inputProps={inputProps}
+      durationInFrames={settings.durationInFrames}
+      fps={settings.fps}
+      compositionWidth={settings.width}
+      compositionHeight={settings.height}
       style={{ width: '100%', height: '100%' }}
       controls={false}
       acknowledgeRemotionLicense

@@ -6,3 +6,4 @@
 
 export * from './media/index.js';
 export * from './export/index.js';
+export * from './probe/index.js';

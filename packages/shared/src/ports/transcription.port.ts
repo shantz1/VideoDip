@@ -13,7 +13,7 @@
  * not belong here.
  */
 
-import type { Milliseconds, Normalized } from '../branded/branded.js';
+import type { MediaLocator, Milliseconds, Normalized } from '../branded/branded.js';
 import type { Result } from '../result/result.js';
 
 /** A single word with its own timing. Drives word-level caption highlighting. */
@@ -83,6 +83,13 @@ export interface TranscriptionCapabilities {
   readonly languages: readonly string[] | 'auto';
 }
 
+/** Expected readiness states that let UI offer the correct recovery action. */
+export interface TranscriptionAvailability {
+  readonly state: 'ready' | 'model-missing' | 'runtime-missing' | 'unsupported';
+  /** Optional user-facing context, such as which model must be downloaded. */
+  readonly detail?: string;
+}
+
 /**
  * A speech-to-text engine.
  *
@@ -102,7 +109,7 @@ export interface TranscriptionProvider {
    * runtime facts such as whether a GPU or model file is present, so do not
    * cache this across sessions.
    */
-  capabilities(): Promise<TranscriptionCapabilities>;
+  capabilities(): Promise<Result<TranscriptionCapabilities>>;
 
   /**
    * Whether the provider is ready to run right now.
@@ -111,12 +118,12 @@ export interface TranscriptionProvider {
    * but unavailable because its model has not been downloaded yet. Offline-first
    * means this must be answerable without a network call.
    */
-  isAvailable(): Promise<boolean>;
+  availability(): Promise<Result<TranscriptionAvailability>>;
 
   /**
    * Transcribes an audio file.
    *
-   * @param audioPath - Absolute path to a local audio file.
+   * @param audio - Opaque host-owned reference to local audio media.
    * @param options - Request tunables.
    * @param signal - Aborts the job. Implementations must honour this and must
    *   terminate any child process they spawned — a cancelled 4K transcription
@@ -127,7 +134,7 @@ export interface TranscriptionProvider {
    * `Err<AppError>` with code `'CANCELLED'`, not as a rejection.
    */
   transcribe(
-    audioPath: string,
+    audio: MediaLocator,
     options?: TranscriptionOptions,
     signal?: AbortSignal,
     onProgress?: (progress: TranscriptionProgress) => void,

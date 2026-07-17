@@ -1,4 +1,30 @@
+import type { MediaKind } from '@videodip/shared';
 import { AbsoluteFill, Audio, Sequence, Video } from 'remotion';
+import { z } from 'zod';
+
+const positiveInteger = z.number().int().positive();
+
+export const compositionClipSchema = z.object({
+  id: z.string().min(1),
+  trackKind: z.string().min(1),
+  mediaKind: z.enum(['video', 'audio']),
+  src: z.string().min(1),
+  startFrame: z.number().int().nonnegative(),
+  durationInFrames: positiveInteger,
+  sourceStartFrame: z.number().int().nonnegative(),
+});
+
+export const compositionSettingsSchema = z.object({
+  fps: positiveInteger,
+  width: positiveInteger,
+  height: positiveInteger,
+  durationInFrames: positiveInteger,
+});
+
+export const videoDipCompositionSchema = z.object({
+  clips: z.array(compositionClipSchema).readonly(),
+  settings: compositionSettingsSchema,
+});
 
 /**
  * One placed clip, already resolved to a servable source and converted to
@@ -15,13 +41,23 @@ import { AbsoluteFill, Audio, Sequence, Video } from 'remotion';
  */
 export interface CompositionClip {
   readonly id: string;
-  readonly kind: 'video' | 'audio' | 'subtitle';
+  /** Open layer metadata. It controls ordering, never media dispatch. */
+  readonly trackKind: string;
+  /** Asset capability. Arbitrary track kinds can still contain media. */
+  readonly mediaKind: MediaKind;
   readonly src: string;
   /** Frame this clip begins at on the overall timeline. */
   readonly startFrame: number;
   readonly durationInFrames: number;
   /** Frame offset into the source media where this clip's content begins. */
   readonly sourceStartFrame: number;
+}
+
+export interface CompositionSettings {
+  readonly fps: number;
+  readonly width: number;
+  readonly height: number;
+  readonly durationInFrames: number;
 }
 
 /**
@@ -31,7 +67,14 @@ export interface CompositionClip {
  */
 export type VideoDipCompositionProps = {
   readonly clips: readonly CompositionClip[];
+  readonly settings: CompositionSettings;
 };
+
+export function getCompositionMetadata({
+  settings,
+}: VideoDipCompositionProps): CompositionSettings {
+  return settings;
+}
 
 /**
  * The one composition VideoDip renders, whether driven by `@remotion/player`
@@ -41,20 +84,19 @@ export type VideoDipCompositionProps = {
  * rather than living inside `apps/desktop` — a preview that can silently
  * drift from what actually exports is a worse bug than a missing feature.
  *
- * No subtitle rendering yet — `packages/subtitle-engine` doesn't exist. A
- * `kind: 'subtitle'` clip is accepted (so the type doesn't need revisiting
- * when it lands) but renders nothing today.
+ * Subtitle/effect payloads will extend this serializable boundary once their
+ * domain packages exist. Track kinds do not need to change when that happens.
  */
 export function VideoDipComposition({ clips }: VideoDipCompositionProps) {
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
       {clips.map((clip) => (
         <Sequence key={clip.id} from={clip.startFrame} durationInFrames={clip.durationInFrames}>
-          {clip.kind === 'audio' ? (
+          {clip.mediaKind === 'audio' ? (
             <Audio src={clip.src} startFrom={clip.sourceStartFrame} />
-          ) : clip.kind === 'video' ? (
+          ) : (
             <Video src={clip.src} startFrom={clip.sourceStartFrame} />
-          ) : null}
+          )}
         </Sequence>
       ))}
     </AbsoluteFill>

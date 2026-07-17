@@ -1,5 +1,5 @@
-import type { AssetId, Milliseconds } from '@videodip/shared';
-import type { MediaItem, MediaKind } from './media.types.js';
+import type { AssetId } from '@videodip/shared';
+import type { CreateMediaItemInput, MediaItem, MediaKind } from './media.types.js';
 
 const AUDIO_EXTENSIONS = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav']);
 
@@ -10,7 +10,7 @@ const AUDIO_EXTENSIONS = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav']);
  * plugin, which returns native OS paths, and this runs on Windows, macOS and
  * Linux alike.
  */
-function basename(path: string): string {
+export function getMediaName(path: string): string {
   const normalized = path.replace(/\\/g, '/');
   const segments = normalized.split('/').filter(Boolean);
   return segments.at(-1) ?? path;
@@ -23,13 +23,14 @@ function basename(path: string): string {
  * into existence — branded types are cast at their construction boundary,
  * never at each call site that merely handles one.
  */
-export function createMediaItem(path: string, duration: Milliseconds | null = null): MediaItem {
+export function createMediaItem(input: CreateMediaItemInput): MediaItem {
   return {
     id: crypto.randomUUID() as AssetId,
-    path,
-    name: basename(path),
-    kind: getMediaKind(path),
-    duration,
+    locator: input.locator,
+    name: input.name,
+    kind: input.kind,
+    duration: input.metadata?.duration ?? input.duration ?? null,
+    metadata: input.metadata ?? null,
   };
 }
 

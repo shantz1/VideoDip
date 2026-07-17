@@ -3,13 +3,18 @@
 import type { ClipId, Milliseconds, Result, TrackId } from '@videodip/shared';
 import {
   addClip as addClipOp,
-  createEmptyTimeline,
+  addTrack as addTrackOp,
+  createTimeline,
+  createTrack,
   getDuration,
   moveClip as moveClipOp,
   removeClip as removeClipOp,
+  removeTrack as removeTrackOp,
+  reorderTrack as reorderTrackOp,
   splitClip as splitClipOp,
   trimClip as trimClipOp,
   type AddClipInput,
+  type CreateTrackInput,
   type TimelineDocument,
   type TrimEdge,
 } from '@videodip/timeline';
@@ -30,6 +35,9 @@ export interface ProjectState {
   readonly past: readonly TimelineDocument[];
   readonly future: readonly TimelineDocument[];
   readonly addClip: (input: AddClipInput) => Result<TimelineDocument>;
+  readonly addTrack: (input: CreateTrackInput, index?: number) => Result<TimelineDocument>;
+  readonly removeTrack: (trackId: TrackId) => Result<TimelineDocument>;
+  readonly reorderTrack: (trackId: TrackId, index: number) => Result<TimelineDocument>;
   readonly removeClip: (clipId: ClipId) => void;
   readonly moveClip: (
     clipId: ClipId,
@@ -48,15 +56,35 @@ export interface ProjectState {
   readonly redo: () => void;
   /** Discards the current document and starts a fresh, empty one. */
   readonly reset: () => void;
+  /** Replaces the document from validated persistence and clears edit history. */
+  readonly load: (document: TimelineDocument) => void;
 }
 
 export const useProjectStore = create<ProjectState>()((set, get) => ({
-  document: createEmptyTimeline(),
+  document: createEditorTimeline(),
   past: [],
   future: [],
 
   addClip: (input) => {
     const result = addClipOp(get().document, input);
+    if (result.ok) applyDocument(result.value);
+    return result;
+  },
+
+  addTrack: (input, index) => {
+    const result = addTrackOp(get().document, input, index);
+    if (result.ok) applyDocument(result.value);
+    return result;
+  },
+
+  removeTrack: (trackId) => {
+    const result = removeTrackOp(get().document, trackId);
+    if (result.ok) applyDocument(result.value);
+    return result;
+  },
+
+  reorderTrack: (trackId, index) => {
+    const result = reorderTrackOp(get().document, trackId, index);
     if (result.ok) applyDocument(result.value);
     return result;
   },
@@ -110,11 +138,25 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   reset: () => {
-    const document = createEmptyTimeline();
+    const document = createEditorTimeline();
     set({ document, past: [], future: [] });
     syncEditor(document);
   },
+
+  load: (document) => {
+    set({ document, past: [], future: [] });
+    syncEditor(document, false);
+  },
 }));
+
+/** Desktop starter layout; a presentation preset, not a timeline invariant. */
+function createEditorTimeline(): TimelineDocument {
+  return createTimeline([
+    createTrack({ id: 'subtitle' as TrackId, kind: 'subtitle', label: 'Subtitles' }),
+    createTrack({ id: 'video' as TrackId, kind: 'video', label: 'Video' }),
+    createTrack({ id: 'audio' as TrackId, kind: 'audio', label: 'Audio' }),
+  ]);
+}
 
 function applyDocument(document: TimelineDocument): void {
   const state = useProjectStore.getState();
@@ -130,8 +172,8 @@ function setProjectState(state: Pick<ProjectState, 'document' | 'past' | 'future
   useProjectStore.setState(state);
 }
 
-function syncEditor(document: TimelineDocument): void {
+function syncEditor(document: TimelineDocument, dirty = true): void {
   const editor = useEditorStore.getState();
   editor.setProjectDuration(getDuration(document));
-  editor.markDirty();
+  if (dirty) editor.markDirty();
 }

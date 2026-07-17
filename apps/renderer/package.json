@@ -12,7 +12,9 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup && tsc --emitDeclarationOnly",
     "dev": "tsup --watch",
@@ -24,9 +26,11 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
+    "@videodip/shared": "workspace:*",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "remotion": "catalog:"
+    "remotion": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@remotion/cli": "catalog:",

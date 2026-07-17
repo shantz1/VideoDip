@@ -1,5 +1,10 @@
 import { Composition } from 'remotion';
-import { VideoDipComposition, type VideoDipCompositionProps } from './composition.js';
+import {
+  getCompositionMetadata,
+  videoDipCompositionSchema,
+  VideoDipComposition,
+  type VideoDipCompositionProps,
+} from './composition.js';
 
 /**
  * CLI/studio-only defaults.
@@ -11,22 +16,28 @@ import { VideoDipComposition, type VideoDipCompositionProps } from './compositio
  * dimensions, fps and duration. These defaults exist only so `pnpm studio`
  * shows something rather than erroring on missing props.
  */
-const DEFAULT_PROPS: VideoDipCompositionProps = { clips: [] };
 const DEFAULT_FPS = 30;
 const DEFAULT_DURATION_IN_FRAMES = DEFAULT_FPS * 60;
 const DEFAULT_WIDTH = 1080;
 const DEFAULT_HEIGHT = 1920;
+const DEFAULT_PROPS: VideoDipCompositionProps = {
+  clips: [],
+  settings: {
+    fps: DEFAULT_FPS,
+    durationInFrames: DEFAULT_DURATION_IN_FRAMES,
+    width: DEFAULT_WIDTH,
+    height: DEFAULT_HEIGHT,
+  },
+};
 
 export function RemotionRoot() {
   return (
     <Composition
       id="VideoDip"
       component={VideoDipComposition}
-      durationInFrames={DEFAULT_DURATION_IN_FRAMES}
-      fps={DEFAULT_FPS}
-      width={DEFAULT_WIDTH}
-      height={DEFAULT_HEIGHT}
+      schema={videoDipCompositionSchema}
       defaultProps={DEFAULT_PROPS}
+      calculateMetadata={({ props }) => getCompositionMetadata(props)}
     />
   );
 }

@@ -8,22 +8,118 @@ import {
   type Result,
   type TrackId,
 } from '@videodip/shared';
-import type { Clip, TimelineDocument } from './document.types.js';
+import type { Clip, TimelineDocument, Track, TrackKind } from './document.types.js';
 
-/**
- * The three fixed tracks every project starts with.
- *
- * Ids are stable literals, not generated, so the desktop shell can reference
- * "the video track" without round-tripping through the document first.
- */
-export function createEmptyTimeline(): TimelineDocument {
+/** Creates a timeline from consumer-chosen tracks, preserving their order. */
+export function createTimeline(tracks: readonly Track[] = []): TimelineDocument {
+  return { tracks: [...tracks] };
+}
+
+/** Input for creating a track without exposing a mutable clip array. */
+export interface CreateTrackInput {
+  readonly id?: TrackId;
+  readonly kind: TrackKind;
+  readonly label: string;
+}
+
+/** Creates one empty generic track. Kind is metadata, not a closed enum. */
+export function createTrack(input: CreateTrackInput): Track {
   return {
-    tracks: [
-      { id: 'video' as TrackId, kind: 'video', label: 'Video', clips: [] },
-      { id: 'subtitle' as TrackId, kind: 'subtitle', label: 'Subtitles', clips: [] },
-      { id: 'audio' as TrackId, kind: 'audio', label: 'Audio', clips: [] },
-    ],
+    id: input.id ?? (crypto.randomUUID() as TrackId),
+    kind: input.kind,
+    label: input.label,
+    clips: [],
   };
+}
+
+/** Inserts an empty track at an explicit top-to-bottom visual position. */
+export function addTrack(
+  document: TimelineDocument,
+  input: CreateTrackInput,
+  index: number = document.tracks.length,
+): Result<TimelineDocument> {
+  const track = createTrack(input);
+  if (document.tracks.some((existing) => existing.id === track.id)) {
+    return err(
+      appError(
+        'CONFLICT',
+        `A track with id "${track.id}" already exists.`,
+        'Choose a unique track id.',
+      ),
+    );
+  }
+  if (!String(track.id).trim() || !track.kind.trim() || !track.label.trim()) {
+    return err(
+      appError(
+        'VALIDATION',
+        'Track kind and label must not be empty.',
+        'Provide a kind and visible label for the track.',
+      ),
+    );
+  }
+  if (!Number.isInteger(index) || index < 0 || index > document.tracks.length) {
+    return err(
+      appError(
+        'VALIDATION',
+        `Track position ${index} is outside the timeline.`,
+        'Choose a position between zero and the current track count.',
+      ),
+    );
+  }
+
+  return ok({
+    tracks: [...document.tracks.slice(0, index), track, ...document.tracks.slice(index)],
+  });
+}
+
+/** Removes an empty track, refusing to discard clips implicitly. */
+export function removeTrack(
+  document: TimelineDocument,
+  trackId: TrackId,
+): Result<TimelineDocument> {
+  const track = document.tracks.find((candidate) => candidate.id === trackId);
+  if (!track) {
+    return err(appError('NOT_FOUND', `No track with id "${trackId}".`, 'Refresh the timeline.'));
+  }
+  if (track.clips.length > 0) {
+    return err(
+      appError(
+        'CONFLICT',
+        'A track containing clips cannot be removed.',
+        'Move or delete the track clips first, then remove the track.',
+      ),
+    );
+  }
+  return ok({ tracks: document.tracks.filter((candidate) => candidate.id !== trackId) });
+}
+
+/** Moves a track to a new top-to-bottom visual index. */
+export function reorderTrack(
+  document: TimelineDocument,
+  trackId: TrackId,
+  index: number,
+): Result<TimelineDocument> {
+  const currentIndex = document.tracks.findIndex((track) => track.id === trackId);
+  if (currentIndex < 0) {
+    return err(appError('NOT_FOUND', `No track with id "${trackId}".`, 'Refresh the timeline.'));
+  }
+  if (!Number.isInteger(index) || index < 0 || index >= document.tracks.length) {
+    return err(
+      appError(
+        'VALIDATION',
+        `Track position ${index} is outside the timeline.`,
+        'Choose an existing track position.',
+      ),
+    );
+  }
+
+  const tracks = [...document.tracks];
+  const [track] = tracks.splice(currentIndex, 1);
+  if (!track) {
+    return err(appError('NOT_FOUND', `No track with id "${trackId}".`, 'Refresh the timeline.'));
+  }
+  tracks.splice(index, 0, track);
+  return ok({ tracks });
 }
 
 /** The project's total duration: the far edge of its last clip, or zero. */
@@ -87,6 +183,23 @@ export interface AddClipInput {
  * unrelated action is a worse failure mode than an explicit rejection.
  */
 export function addClip(document: TimelineDocument, input: AddClipInput): Result<TimelineDocument> {
+  const sourceStart = input.sourceStart ?? (0 as Milliseconds);
+  if (
+    !Number.isFinite(input.start) ||
+    input.start < 0 ||
+    !Number.isFinite(input.duration) ||
+    input.duration <= 0 ||
+    !Number.isFinite(sourceStart) ||
+    sourceStart < 0
+  ) {
+    return err(
+      appError(
+        'VALIDATION',
+        'Clip timing must be finite, start at or after zero, and have positive duration.',
+        'Choose a valid timeline position and source range.',
+      ),
+    );
+  }
   const track = document.tracks.find((t) => t.id === input.trackId);
   if (!track) {
     return err(
@@ -111,7 +224,7 @@ export function addClip(document: TimelineDocument, input: AddClipInput): Result
     assetId: input.assetId,
     start: input.start,
     duration: input.duration,
-    sourceStart: input.sourceStart ?? (0 as Milliseconds),
+    sourceStart,
   };
 
   return ok(
@@ -139,6 +252,20 @@ export function findFreeStart(
   preferredStart: Milliseconds,
   duration: Milliseconds,
 ): Result<Milliseconds> {
+  if (
+    !Number.isFinite(preferredStart) ||
+    preferredStart < 0 ||
+    !Number.isFinite(duration) ||
+    duration <= 0
+  ) {
+    return err(
+      appError(
+        'VALIDATION',
+        'Placement timing must be finite, non-negative, and have positive duration.',
+        'Choose a valid timeline position and clip duration.',
+      ),
+    );
+  }
   const track = document.tracks.find((t) => t.id === trackId);
   if (!track) {
     return err(
@@ -185,6 +312,15 @@ export function moveClip(
   newStart: Milliseconds,
   newTrackId?: TrackId,
 ): Result<TimelineDocument> {
+  if (!Number.isFinite(newStart) || newStart < 0) {
+    return err(
+      appError(
+        'VALIDATION',
+        'A clip cannot move before the timeline start or to a non-finite time.',
+        'Choose a position at or after zero.',
+      ),
+    );
+  }
   const found = findClip(document, clipId);
   if (!found) {
     return err(appError('NOT_FOUND', `No clip with id "${clipId}".`, 'Reload the project.'));
@@ -239,6 +375,15 @@ export function trimClip(
   edge: TrimEdge,
   newTime: Milliseconds,
 ): Result<TimelineDocument> {
+  if (!Number.isFinite(newTime) || newTime < 0) {
+    return err(
+      appError(
+        'VALIDATION',
+        'A trim point must be a finite time at or after zero.',
+        'Choose a valid point on the timeline.',
+      ),
+    );
+  }
   const found = findClip(document, clipId);
   if (!found) {
     return err(appError('NOT_FOUND', `No clip with id "${clipId}".`, 'Reload the project.'));
@@ -326,6 +471,15 @@ export function splitClip(
   clipId: ClipId,
   atTime: Milliseconds,
 ): Result<TimelineDocument> {
+  if (!Number.isFinite(atTime) || atTime < 0) {
+    return err(
+      appError(
+        'VALIDATION',
+        'A split point must be a finite time at or after zero.',
+        'Choose a valid point inside the clip.',
+      ),
+    );
+  }
   const found = findClip(document, clipId);
   if (!found) {
     return err(appError('NOT_FOUND', `No clip with id "${clipId}".`, 'Reload the project.'));

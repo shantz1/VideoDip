@@ -7,6 +7,7 @@ import { useEditorStore } from '../editor.store';
 import { useProjectStore } from '../project.store';
 import { LeftSidebar } from './left-sidebar';
 import { PreviewCanvas } from './preview-canvas';
+import { ProjectPersistenceController } from './project-persistence-controller';
 import { RightInspector } from './right-inspector';
 import { TimelinePanel } from './timeline-panel';
 import { TopToolbar } from './top-toolbar';
@@ -183,7 +184,8 @@ export function EditorShell() {
   useShortcuts(shortcuts, true);
 
   return (
-    <div className="vd-app-shell flex h-screen flex-col overflow-hidden bg-surface-base text-text-primary">
+    <div className="vd-app-shell bg-surface-base text-text-primary flex h-screen flex-col overflow-hidden">
+      <ProjectPersistenceController />
       <TopToolbar />
       <div className="flex min-h-0 flex-1">
         <LeftSidebar />

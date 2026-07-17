@@ -1,7 +1,7 @@
 'use client';
 
 import type { MediaItem } from '@videodip/media-engine';
-import type { ClipId, Milliseconds } from '@videodip/shared';
+import type { ClipId, Milliseconds, ProjectId } from '@videodip/shared';
 import { ms } from '@videodip/shared';
 import { create } from 'zustand';
 
@@ -46,6 +46,14 @@ export type InspectorTab =
   | 'effects'
   | 'audio';
 
+export interface RestoredEditorProject {
+  readonly id: ProjectId;
+  readonly name: string;
+  readonly aspectRatio: AspectRatio;
+  readonly mediaItems: readonly MediaItem[];
+  readonly createdAt: string;
+}
+
 export interface EditorState {
   // --- Layout ---
   readonly activePanel: SidebarPanel;
@@ -80,8 +88,12 @@ export interface EditorState {
 
   // --- Project ---
   /** Null until a project is created or loaded. */
+  readonly projectId: ProjectId | null;
   readonly projectName: string | null;
-  /** Drives the "saved / unsaved" indicator. Autosave will own this. */
+  readonly projectCreatedAt: string | null;
+  /** Monotonic edit counter used to prevent an older save clearing newer work. */
+  readonly editRevision: number;
+  /** Drives the "saved / unsaved" indicator. */
   readonly isDirty: boolean;
 
   // --- Media pool ---
@@ -115,6 +127,8 @@ export interface EditorState {
   readonly addMediaItems: (items: readonly MediaItem[]) => void;
   /** Marks the in-memory project as changed since its last persisted state. */
   readonly markDirty: () => void;
+  /** Clears dirty state only if the completed save matches the latest edit. */
+  readonly markSaved: (revision: number) => void;
   /**
    * Starts a new, unnamed, in-memory project.
    *
@@ -122,7 +136,9 @@ export interface EditorState {
    * "Untitled project" so repeated clicks are visibly distinct rather than a
    * no-op.
    */
-  readonly newProject: () => void;
+  readonly newProject: (identity?: { id: ProjectId; createdAt: string }) => void;
+  /** Restores persisted shell/media state without manufacturing an edit. */
+  readonly restoreProject: (project: RestoredEditorProject) => void;
 }
 
 const UNTITLED_PROJECT_PATTERN = /^Untitled project(?: (\d+))?$/;
@@ -152,7 +168,10 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
 
   selectedClipId: null,
 
+  projectId: null,
   projectName: null,
+  projectCreatedAt: null,
+  editRevision: 0,
   isDirty: false,
 
   mediaItems: [],
@@ -198,22 +217,58 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
 
   toggleSnap: () => set((state) => ({ snapEnabled: !state.snapEnabled })),
 
-  setAspectRatio: (aspectRatio) => set({ aspectRatio }),
+  setAspectRatio: (aspectRatio) =>
+    set((state) =>
+      state.aspectRatio === aspectRatio
+        ? state
+        : { aspectRatio, isDirty: true, editRevision: state.editRevision + 1 },
+    ),
 
   selectClip: (selectedClipId) => set({ selectedClipId }),
 
-  addMediaItems: (items) => set((state) => ({ mediaItems: [...state.mediaItems, ...items] })),
+  addMediaItems: (items) => {
+    if (items.length === 0) return;
+    set((state) => ({
+      mediaItems: [...state.mediaItems, ...items],
+      isDirty: true,
+      editRevision: state.editRevision + 1,
+    }));
+  },
 
-  markDirty: () => set({ isDirty: true }),
+  markDirty: () => set((state) => ({ isDirty: true, editRevision: state.editRevision + 1 })),
 
-  newProject: () => {
+  markSaved: (revision) =>
+    set((state) => (state.editRevision === revision ? { isDirty: false } : state)),
+
+  newProject: (identity) => {
     const match = get().projectName?.match(UNTITLED_PROJECT_PATTERN);
     const next = match ? Number(match[1] ?? '1') + 1 : 1;
-    set({
+    const projectIdentity = identity ?? {
+      id: crypto.randomUUID() as ProjectId,
+      createdAt: new Date().toISOString(),
+    };
+    set((state) => ({
+      projectId: projectIdentity.id,
       projectName: next === 1 ? 'Untitled project' : `Untitled project ${next}`,
+      projectCreatedAt: projectIdentity.createdAt,
       isDirty: true,
+      editRevision: state.editRevision + 1,
       selectedClipId: null,
       mediaItems: [],
-    });
+    }));
   },
+
+  restoreProject: (project) =>
+    set({
+      projectId: project.id,
+      projectName: project.name,
+      projectCreatedAt: project.createdAt,
+      aspectRatio: project.aspectRatio,
+      mediaItems: project.mediaItems,
+      selectedClipId: null,
+      isPlaying: false,
+      playhead: ms(0),
+      isDirty: false,
+      editRevision: 0,
+    }),
 }));

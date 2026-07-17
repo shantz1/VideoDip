@@ -37,6 +37,8 @@ export type SegmentId = Brand<string, 'SegmentId'>;
 export type TemplateId = Brand<string, 'TemplateId'>;
 export type PluginId = Brand<string, 'PluginId'>;
 export type JobId = Brand<string, 'JobId'>;
+/** Opaque host-owned media reference: a desktop path or browser storage key. */
+export type MediaLocator = Brand<string, 'MediaLocator'>;
 
 /** Asserts a number is milliseconds. Does not validate; use at trust boundaries. */
 export const ms = (value: number): Milliseconds => value as Milliseconds;

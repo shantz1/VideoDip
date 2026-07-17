@@ -1,6 +1,6 @@
 'use client';
 
-import { ms, type TrackId } from '@videodip/shared';
+import { ms } from '@videodip/shared';
 import { findFreeStart } from '@videodip/timeline';
 import { Button, cn, useTheme, type ThemeMode } from '@videodip/ui';
 import {
@@ -18,16 +18,15 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { useEditorStore, type AspectRatio, type SidebarPanel } from '../editor.store';
-import { importMedia } from '../lib/import-media';
+import { useEditorHost } from '../host/editor-host';
 import { useProjectStore } from '../project.store';
 import { EmptyState } from './empty-state';
 
 /**
  * Fallback only for containers the platform decoder cannot inspect yet.
  *
- * `media-engine` doesn't probe real media duration yet — see `MediaItem`'s
- * own doc. Every clip gets this length until it does; trimming already works
- * for shortening one down in the meantime.
+ * Used only when both the platform decoder and FFprobe fail to inspect a
+ * source. Trimming can correct the placement until the file is relinked.
  */
 const UNKNOWN_CLIP_DURATION = ms(5000);
 
@@ -67,7 +66,7 @@ export function LeftSidebar() {
       <nav
         className={cn(
           'flex w-12 flex-col items-center gap-0.5 py-2',
-          'border-r border-border-subtle bg-surface-base',
+          'border-border-subtle bg-surface-base border-r',
         )}
         aria-label="Sections"
       >
@@ -83,11 +82,11 @@ export function LeftSidebar() {
 
       {!collapsed && (
         <aside
-          className={cn('flex w-60 flex-col border-r border-border-subtle bg-surface-base')}
+          className={cn('border-border-subtle bg-surface-base flex w-60 flex-col border-r')}
           aria-label={active?.label}
         >
           <div className="flex h-9 shrink-0 items-center px-3">
-            <h2 className="text-xs font-medium tracking-wide text-text-secondary uppercase">
+            <h2 className="text-text-secondary text-xs font-medium tracking-wide uppercase">
               {active?.label}
             </h2>
           </div>
@@ -130,7 +129,7 @@ function RailButton({
       <Icon className="size-[18px]" aria-hidden="true" />
       <span className="sr-only">{panel.label}</span>
       {active && (
-        <span className="absolute left-0 h-4 w-0.5 rounded-r-full bg-accent" aria-hidden="true" />
+        <span className="bg-accent absolute left-0 h-4 w-0.5 rounded-r-full" aria-hidden="true" />
       )}
     </button>
   );
@@ -209,7 +208,7 @@ function SettingsPanel() {
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-xs font-medium text-text-secondary">Appearance</p>
+      <p className="text-text-secondary text-xs font-medium">Appearance</p>
       <div role="radiogroup" aria-label="Theme" className="flex gap-1">
         {THEME_OPTIONS.map((option) => (
           <Button
@@ -225,7 +224,7 @@ function SettingsPanel() {
         ))}
       </div>
 
-      <p className="mt-3 text-xs font-medium text-text-secondary">Aspect ratio</p>
+      <p className="text-text-secondary mt-3 text-xs font-medium">Aspect ratio</p>
       <AspectRatioSelector />
     </div>
   );
@@ -256,10 +255,10 @@ function AspectRatioSelector() {
 }
 
 /**
- * The Projects panel's real behaviour: starts a new in-memory project.
+ * The Projects panel's current behaviour: starts a new durable project.
  *
  * No project list yet — this panel stays the empty state even after creating
- * one, since there is nowhere else for a "current project" to live. Resets
+ * one yet; startup restores the newest local snapshot automatically. Resets
  * `project.store.ts`'s document too — a "new" project starting with the
  * previous one's clips would be a bug, not a feature. The visible effect is
  * the toolbar's project name, the unsaved-changes indicator, and the
@@ -267,6 +266,7 @@ function AspectRatioSelector() {
  */
 function ProjectsPanel() {
   const newProject = useEditorStore((s) => s.newProject);
+  const projectName = useEditorStore((s) => s.projectName);
   const resetProject = useProjectStore((s) => s.reset);
 
   const handleNewProject = () => {
@@ -277,8 +277,8 @@ function ProjectsPanel() {
   return (
     <EmptyState
       icon={FolderOpen}
-      title="No projects"
-      description="Your projects are saved locally as .videodip archives."
+      title={projectName ?? 'No project open'}
+      description="Projects autosave locally. Browsing and portable .videodip archives are coming next."
       action="New project"
       onAction={handleNewProject}
     />
@@ -293,6 +293,7 @@ function ProjectsPanel() {
  * length.
  */
 function MediaPanel() {
+  const { importMedia } = useEditorHost();
   const mediaItems = useEditorStore((s) => s.mediaItems);
   const addMediaItems = useEditorStore((s) => s.addMediaItems);
   const playhead = useEditorStore((s) => s.playhead);
@@ -317,7 +318,11 @@ function MediaPanel() {
 
   const handleAddToTimeline = (item: (typeof mediaItems)[number]) => {
     setTimelineError(null);
-    const trackId = item.kind as TrackId;
+    const trackId = timelineDocument.tracks.find((track) => track.kind === item.kind)?.id;
+    if (!trackId) {
+      setTimelineError(`Add a ${item.kind} track before placing this media.`);
+      return;
+    }
     const duration = item.duration ?? UNKNOWN_CLIP_DURATION;
     // Place at the playhead when that spot is free, otherwise in the first
     // gap after it — "add" should place the clip, not lecture the user about
@@ -381,14 +386,14 @@ function MediaPanel() {
               key={item.id}
               className={cn(
                 'group flex items-center gap-2 rounded-md px-2 py-1.5',
-                'text-xs text-text-primary hover:bg-surface-hover',
+                'text-text-primary hover:bg-surface-hover text-xs',
               )}
-              title={item.path}
+              title={String(item.locator)}
             >
-              <ItemIcon className="size-3.5 shrink-0 text-text-tertiary" aria-hidden="true" />
+              <ItemIcon className="text-text-tertiary size-3.5 shrink-0" aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">
                 {item.name}
-                <span className="block text-2xs text-text-tertiary">
+                <span className="text-2xs text-text-tertiary block">
                   {item.duration === null ? 'Duration unknown' : formatMediaDuration(item.duration)}
                 </span>
               </span>
@@ -396,7 +401,7 @@ function MediaPanel() {
                 size="icon-sm"
                 variant="ghost"
                 aria-label={`Add ${item.name} to the timeline`}
-                className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                className="shrink-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
                 onClick={() => handleAddToTimeline(item)}
                 leadingIcon={<Plus />}
               />
@@ -425,7 +430,7 @@ function formatMediaDuration(duration: number): string {
  */
 function PanelErrorNotice({ message }: { message: string }) {
   return (
-    <p role="alert" className="rounded-md bg-danger-subtle px-2 py-1.5 text-xs text-danger">
+    <p role="alert" className="bg-danger-subtle text-danger rounded-md px-2 py-1.5 text-xs">
       {message}
     </p>
   );

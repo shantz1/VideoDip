@@ -1,14 +1,18 @@
 import { ms, type AssetId } from '@videodip/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { useEditorStore } from './editor.store';
 import { useProjectStore } from './project.store';
 
 const initial = useProjectStore.getState();
+const initialEditor = useEditorStore.getState();
 const state = () => useProjectStore.getState();
 const ASSET = 'asset-a' as AssetId;
 const VIDEO = 'video' as never;
+const videoClips = () => state().document.tracks.find((track) => track.kind === 'video')?.clips;
 
 beforeEach(() => {
   useProjectStore.setState(initial, true);
+  useEditorStore.setState(initialEditor, true);
 });
 
 describe('addClip', () => {
@@ -21,7 +25,7 @@ describe('addClip', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(state().document.tracks.find((t) => t.id === 'video')?.clips).toHaveLength(1);
+    expect(videoClips()).toHaveLength(1);
   });
 
   it('leaves the document untouched when the add fails', () => {
@@ -40,42 +44,58 @@ describe('addClip', () => {
   });
 });
 
+describe('generic tracks', () => {
+  it('adds, reorders, and removes arbitrary track kinds through undoable state', () => {
+    const added = state().addTrack({ kind: 'plugin:overlay', label: 'Plugin overlay' }, 0);
+    expect(added.ok).toBe(true);
+    const track = state().document.tracks[0]!;
+    expect(track.kind).toBe('plugin:overlay');
+
+    expect(state().reorderTrack(track.id, 2).ok).toBe(true);
+    expect(state().document.tracks[2]?.id).toBe(track.id);
+
+    expect(state().removeTrack(track.id).ok).toBe(true);
+    expect(state().document.tracks.some((candidate) => candidate.id === track.id)).toBe(false);
+    expect(state().past.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
 describe('removeClip', () => {
   it('removes a clip added earlier', () => {
     state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
-    const clipId = state().document.tracks[0]!.clips[0]!.id;
+    const clipId = videoClips()![0]!.id;
 
     state().removeClip(clipId);
-    expect(state().document.tracks[0]?.clips).toHaveLength(0);
+    expect(videoClips()).toHaveLength(0);
   });
 });
 
 describe('moveClip / trimClip / splitClip', () => {
   it('moveClip relocates a clip and updates the document', () => {
     state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
-    const clipId = state().document.tracks[0]!.clips[0]!.id;
+    const clipId = videoClips()![0]!.id;
 
     const result = state().moveClip(clipId, ms(5000));
     expect(result.ok).toBe(true);
-    expect(state().document.tracks[0]?.clips[0]?.start).toBe(5000);
+    expect(videoClips()?.[0]?.start).toBe(5000);
   });
 
   it('trimClip shortens a clip and updates the document', () => {
     state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
-    const clipId = state().document.tracks[0]!.clips[0]!.id;
+    const clipId = videoClips()![0]!.id;
 
     const result = state().trimClip(clipId, 'end', ms(500));
     expect(result.ok).toBe(true);
-    expect(state().document.tracks[0]?.clips[0]?.duration).toBe(500);
+    expect(videoClips()?.[0]?.duration).toBe(500);
   });
 
   it('splitClip produces two clips in the document', () => {
     state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
-    const clipId = state().document.tracks[0]!.clips[0]!.id;
+    const clipId = videoClips()![0]!.id;
 
     const result = state().splitClip(clipId, ms(500));
     expect(result.ok).toBe(true);
-    expect(state().document.tracks[0]?.clips).toHaveLength(2);
+    expect(videoClips()).toHaveLength(2);
   });
 });
 
@@ -88,17 +108,34 @@ describe('reset', () => {
   });
 });
 
+describe('load', () => {
+  it('restores a saved document without dirtying it or retaining undo history', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    const persisted = state().document;
+    state().removeClip(persisted.tracks.find((track) => track.kind === 'video')!.clips[0]!.id);
+    useEditorStore.setState({ isDirty: false, editRevision: 0 });
+
+    state().load(persisted);
+
+    expect(videoClips()).toHaveLength(1);
+    expect(state().past).toEqual([]);
+    expect(state().future).toEqual([]);
+    expect(useEditorStore.getState().isDirty).toBe(false);
+    expect(useEditorStore.getState().duration).toBe(1000);
+  });
+});
+
 describe('undo / redo', () => {
   it('undoes and reapplies document edits', () => {
     state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
     expect(state().past).toHaveLength(1);
 
     state().undo();
-    expect(state().document.tracks[0]?.clips).toHaveLength(0);
+    expect(videoClips()).toHaveLength(0);
     expect(state().future).toHaveLength(1);
 
     state().redo();
-    expect(state().document.tracks[0]?.clips).toHaveLength(1);
+    expect(videoClips()).toHaveLength(1);
   });
 
   it('clears redo history when a new edit follows undo', () => {

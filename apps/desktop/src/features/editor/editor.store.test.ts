@@ -1,10 +1,17 @@
 ﻿import { createMediaItem } from '@videodip/media-engine';
-import { ms } from '@videodip/shared';
+import { mediaLocatorSchema, ms, type ProjectId } from '@videodip/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useEditorStore } from './editor.store';
 
 const initial = useEditorStore.getState();
 const state = () => useEditorStore.getState();
+
+const mediaItem = (locator: string) =>
+  createMediaItem({
+    locator: mediaLocatorSchema.parse(locator),
+    name: locator.split('/').at(-1) ?? locator,
+    kind: 'video',
+  });
 
 beforeEach(() => {
   useEditorStore.setState(initial, true);
@@ -81,11 +88,20 @@ describe('aspect ratio', () => {
   });
 
   it('switches to any supported ratio', () => {
+    const revision = state().editRevision;
     state().setAspectRatio('16:9');
     expect(state().aspectRatio).toBe('16:9');
+    expect(state().editRevision).toBe(revision + 1);
+    expect(state().isDirty).toBe(true);
 
     state().setAspectRatio('4:5');
     expect(state().aspectRatio).toBe('4:5');
+  });
+
+  it('does not manufacture an edit when the ratio is unchanged', () => {
+    state().setAspectRatio(state().aspectRatio);
+    expect(state().editRevision).toBe(0);
+    expect(state().isDirty).toBe(false);
   });
 });
 
@@ -136,8 +152,13 @@ describe('selection', () => {
 
 describe('project', () => {
   it('names the first project "Untitled project" and marks it dirty', () => {
-    state().newProject();
+    state().newProject({
+      id: 'project-a' as ProjectId,
+      createdAt: '2026-07-17T10:00:00.000Z',
+    });
+    expect(state().projectId).toBe('project-a');
     expect(state().projectName).toBe('Untitled project');
+    expect(state().projectCreatedAt).toBe('2026-07-17T10:00:00.000Z');
     expect(state().isDirty).toBe(true);
   });
 
@@ -155,16 +176,49 @@ describe('project', () => {
   });
 
   it('starts with an empty project media pool', () => {
-    state().addMediaItems([createMediaItem('/old-project.mp4')]);
+    state().addMediaItems([mediaItem('/old-project.mp4')]);
     state().newProject();
     expect(state().mediaItems).toEqual([]);
   });
 
   it('adds media items to the pool without touching the project', () => {
-    const item = createMediaItem('/a.mp4');
+    const item = mediaItem('/a.mp4');
     state().addMediaItems([item]);
 
     expect(state().mediaItems).toEqual([item]);
     expect(state().projectName).toBeNull();
+    expect(state().isDirty).toBe(true);
+  });
+
+  it('does not clear newer edits when an older save finishes', () => {
+    state().markDirty();
+    const savingRevision = state().editRevision;
+    state().markDirty();
+
+    state().markSaved(savingRevision);
+    expect(state().isDirty).toBe(true);
+
+    state().markSaved(state().editRevision);
+    expect(state().isDirty).toBe(false);
+  });
+
+  it('restores persisted project metadata without marking it dirty', () => {
+    const item = mediaItem('/restored.mp4');
+    state().restoreProject({
+      id: 'restored' as ProjectId,
+      name: 'Restored project',
+      aspectRatio: '16:9',
+      mediaItems: [item],
+      createdAt: '2026-07-17T09:00:00.000Z',
+    });
+
+    expect(state()).toMatchObject({
+      projectId: 'restored',
+      projectName: 'Restored project',
+      aspectRatio: '16:9',
+      isDirty: false,
+      editRevision: 0,
+    });
+    expect(state().mediaItems).toEqual([item]);
   });
 });

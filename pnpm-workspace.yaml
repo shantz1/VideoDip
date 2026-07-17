@@ -1,6 +1,6 @@
 packages:
-  - "apps/*"
-  - "packages/*"
+  - 'apps/*'
+  - 'packages/*'
 
 # Single source of truth for third-party versions.
 # Workspace manifests reference these via "catalog:" instead of literal ranges,
@@ -12,41 +12,41 @@ catalog:
   react-dom: 19.2.7
   # @types/* version independently of the runtime they describe — do not
   # assume they track the react version.
-  "@types/react": 19.2.17
-  "@types/react-dom": 19.2.3
+  '@types/react': 19.2.17
+  '@types/react-dom': 19.2.3
 
   # --- Language / build ---
   typescript: 7.0.2
   turbo: 2.10.5
   # Pinned to 22.x deliberately: it must match the Node runtime in `engines`,
   # not chase latest. 26.x would type against APIs Node 22 does not have.
-  "@types/node": 22.19.1
+  '@types/node': 22.19.1
   tsup: 8.5.1
 
   # --- Styling / design system ---
   tailwindcss: 4.3.3
-  "@tailwindcss/postcss": 4.3.3
-  "tailwind-merge": 3.6.0
+  '@tailwindcss/postcss': 4.3.3
+  'tailwind-merge': 3.6.0
   clsx: 2.1.1
-  "class-variance-authority": 0.7.1
-  "lucide-react": 1.24.0
-  "framer-motion": 12.42.2
+  'class-variance-authority': 0.7.1
+  'lucide-react': 1.24.0
+  'framer-motion': 12.42.2
 
   # --- State ---
   zustand: 5.0.14
   immer: 10.1.3
 
   # --- Desktop ---
-  "@tauri-apps/cli": 2.11.4
-  "@tauri-apps/api": 2.11.1
-  "@tauri-apps/plugin-dialog": 2.7.1
+  '@tauri-apps/cli': 2.11.4
+  '@tauri-apps/api': 2.11.1
+  '@tauri-apps/plugin-dialog': 2.7.1
 
   # --- Backend ---
-  "@nestjs/core": 11.1.28
-  "@nestjs/common": 11.1.28
-  "@nestjs/platform-express": 11.1.28
-  "@nestjs/config": 4.0.2
-  "reflect-metadata": 0.2.2
+  '@nestjs/core': 11.1.28
+  '@nestjs/common': 11.1.28
+  '@nestjs/platform-express': 11.1.28
+  '@nestjs/config': 4.0.2
+  'reflect-metadata': 0.2.2
   rxjs: 7.8.2
 
   # --- Queue ---
@@ -55,9 +55,9 @@ catalog:
 
   # --- Rendering ---
   remotion: 4.0.490
-  "@remotion/cli": 4.0.490
-  "@remotion/player": 4.0.490
-  "@remotion/renderer": 4.0.490
+  '@remotion/cli': 4.0.490
+  '@remotion/player': 4.0.490
+  '@remotion/renderer': 4.0.490
 
   # --- Validation ---
   zod: 4.4.3
@@ -65,11 +65,12 @@ catalog:
   # --- Quality ---
   eslint: 10.7.0
   prettier: 3.7.4
+  prettier-plugin-tailwindcss: 0.8.1
   vitest: 4.1.10
   jsdom: 29.1.1
-  "@testing-library/react": 16.3.2
-  "@testing-library/jest-dom": 6.9.1
-  "@testing-library/user-event": 14.6.1
+  '@testing-library/react': 16.3.2
+  '@testing-library/jest-dom': 6.9.1
+  '@testing-library/user-event': 14.6.1
 
 # pnpm blocks dependency build scripts by default. esbuild needs its postinstall
 # to fetch the platform binary that tsup and vitest depend on; without this it

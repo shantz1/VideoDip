@@ -1,8 +1,13 @@
 import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { createMediaItem, type MediaItem } from '@videodip/media-engine';
-import { appError, err, tryCatchAsync, type Result } from '@videodip/shared';
-import { probeMediaDuration } from './probe-media';
+import {
+  createMediaItem,
+  getMediaKind,
+  getMediaName,
+  type MediaItem,
+} from '@videodip/media-engine';
+import { appError, err, mediaLocatorSchema, tryCatchAsync, type Result } from '@videodip/shared';
+import { probeMediaDuration, probeMediaMetadata } from './probe-media';
 
 /**
  * Extensions the media panel accepts.
@@ -59,9 +64,20 @@ export async function importMedia(): Promise<Result<readonly MediaItem[]>> {
       const paths = Array.isArray(selection) ? selection : [selection];
       return Promise.all(
         paths.map(async (path) => {
-          const item = createMediaItem(path);
-          const duration = await probeMediaDuration(convertFileSrc(path), item.kind);
-          return duration.ok ? { ...item, duration: duration.value } : item;
+          const reference = {
+            locator: mediaLocatorSchema.parse(path),
+            name: getMediaName(path),
+            kind: getMediaKind(path),
+          };
+          const duration = await probeMediaDuration(convertFileSrc(path), reference.kind);
+          if (!duration.ok) {
+            const metadata = await probeMediaMetadata(reference.locator);
+            if (metadata.ok) return createMediaItem({ ...reference, metadata: metadata.value });
+          }
+          return createMediaItem({
+            ...reference,
+            duration: duration.ok ? duration.value : null,
+          });
         }),
       );
     },

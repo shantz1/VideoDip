@@ -6,8 +6,7 @@ import { Download, HardDrive, Redo2, Sparkles, Undo2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useShortcuts, type Shortcut } from '../../shortcuts/index';
 import { useEditorStore } from '../editor.store';
-import { exportTimeline } from '../lib/export-video';
-import { importMedia } from '../lib/import-media';
+import { useEditorHost } from '../host/editor-host';
 import { useProjectStore } from '../project.store';
 
 interface MenuItem {
@@ -23,6 +22,7 @@ interface MenuDefinition {
 
 /** The application toolbar, command menus, and primary editor actions. */
 export function TopToolbar() {
+  const { importMedia } = useEditorHost();
   const projectName = useEditorStore((state) => state.projectName);
   const isDirty = useEditorStore((state) => state.isDirty);
   const newProject = useEditorStore((state) => state.newProject);
@@ -100,7 +100,7 @@ export function TopToolbar() {
     <header
       className={cn(
         'vd-drag-region relative flex h-11 shrink-0 items-center gap-1 px-3',
-        'border-b border-border-subtle bg-surface-raised',
+        'border-border-subtle bg-surface-raised border-b',
       )}
     >
       <Logo />
@@ -112,10 +112,10 @@ export function TopToolbar() {
       </nav>
 
       <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
-        <span className="text-xs text-text-secondary">{projectName ?? 'Untitled project'}</span>
+        <span className="text-text-secondary text-xs">{projectName ?? 'Untitled project'}</span>
         {isDirty && (
           <span
-            className="size-1.5 rounded-full bg-warning"
+            className="bg-warning size-1.5 rounded-full"
             role="status"
             aria-label="Unsaved changes"
           />
@@ -140,7 +140,7 @@ export function TopToolbar() {
           leadingIcon={<Redo2 />}
         />
 
-        <div className="mx-1 h-4 w-px bg-border-subtle" />
+        <div className="bg-border-subtle mx-1 h-4 w-px" />
 
         <Button
           size="sm"
@@ -152,10 +152,10 @@ export function TopToolbar() {
         </Button>
         <ExportButton />
 
-        <div className="mx-1 h-4 w-px bg-border-subtle" />
+        <div className="bg-border-subtle mx-1 h-4 w-px" />
 
         <div
-          className="flex items-center gap-1.5 px-1 text-xs text-text-tertiary"
+          className="text-text-tertiary flex items-center gap-1.5 px-1 text-xs"
           title="Projects and media stay on this machine"
         >
           <HardDrive className="size-3.5" aria-hidden="true" />
@@ -165,7 +165,7 @@ export function TopToolbar() {
       {commandError && (
         <p
           role="alert"
-          className="vd-no-drag absolute top-full right-3 z-[--z-toast] mt-2 max-w-72 rounded-md bg-danger-subtle px-3 py-2 text-xs text-danger shadow-lg"
+          className="vd-no-drag bg-danger-subtle text-danger absolute top-full right-3 z-[--z-toast] mt-2 max-w-72 rounded-md px-3 py-2 text-xs shadow-lg"
         >
           {commandError}
         </p>
@@ -189,6 +189,7 @@ type ExportPhase =
  * central shortcut registry, never an ad-hoc listener.
  */
 function ExportButton() {
+  const { exportTimeline } = useEditorHost();
   const documentValue = useProjectStore((state) => state.document);
   const mediaItems = useEditorStore((state) => state.mediaItems);
   const aspectRatio = useEditorStore((state) => state.aspectRatio);
@@ -203,7 +204,7 @@ function ExportButton() {
     if (!hasClips || isRunning) return;
     setPhase({ kind: 'running', fraction: 0 });
 
-    const pathByAsset = new Map(mediaItems.map((item) => [item.id, item.path]));
+    const pathByAsset = new Map(mediaItems.map((item) => [item.id, String(item.locator)]));
     const result = await exportTimeline(
       documentValue,
       (assetId: AssetId) => pathByAsset.get(assetId),
@@ -255,10 +256,10 @@ function ExportButton() {
           aria-valuemax={100}
           aria-valuenow={Math.round(phase.fraction * 100)}
           aria-label="Export progress"
-          className="absolute inset-x-0 -bottom-0.5 h-0.5 overflow-hidden rounded-full bg-surface-sunken"
+          className="bg-surface-sunken absolute inset-x-0 -bottom-0.5 h-0.5 overflow-hidden rounded-full"
         >
           <span
-            className="block h-full bg-accent transition-[width] duration-[--duration-fast]"
+            className="bg-accent block h-full transition-[width] duration-[--duration-fast]"
             style={{ width: `${phase.fraction * 100}%` }}
           />
         </span>
@@ -268,10 +269,10 @@ function ExportButton() {
           role="alert"
           className={cn(
             'absolute top-full right-0 z-[--z-dropdown] mt-2 w-72 rounded-md p-2',
-            'border border-border-default bg-surface-overlay shadow-lg',
+            'border-border-default bg-surface-overlay border shadow-lg',
           )}
         >
-          <p className="text-xs whitespace-pre-wrap text-danger">{phase.message}</p>
+          <p className="text-danger text-xs whitespace-pre-wrap">{phase.message}</p>
           <Button
             size="sm"
             variant="ghost"
@@ -301,7 +302,7 @@ function ToolbarMenu({ menu }: { menu: MenuDefinition }) {
         role="menu"
         className={cn(
           'absolute top-full left-0 z-[--z-dropdown] mt-1 min-w-40 rounded-md p-1',
-          'border border-border-default bg-surface-overlay shadow-lg',
+          'border-border-default bg-surface-overlay border shadow-lg',
         )}
       >
         {menu.items.map((item) => (
@@ -315,10 +316,10 @@ function ToolbarMenu({ menu }: { menu: MenuDefinition }) {
               event.currentTarget.closest('details')?.removeAttribute('open');
             }}
             className={cn(
-              'flex w-full rounded-sm px-2 py-1.5 text-left text-xs text-text-secondary',
+              'text-text-secondary flex w-full rounded-sm px-2 py-1.5 text-left text-xs',
               'hover:bg-surface-hover hover:text-text-primary',
               'focus-visible:outline-2 focus-visible:outline-[--color-border-focus]',
-              'disabled:pointer-events-none disabled:text-text-disabled',
+              'disabled:text-text-disabled disabled:pointer-events-none',
             )}
           >
             {item.label}
@@ -333,7 +334,7 @@ function Logo() {
   return (
     <div className="vd-no-drag flex items-center gap-2 pl-1">
       <div
-        className="grid size-5 place-items-center rounded-sm bg-accent text-text-on-brand"
+        className="bg-accent text-text-on-brand grid size-5 place-items-center rounded-sm"
         aria-hidden="true"
       >
         <svg viewBox="0 0 24 24" fill="currentColor" className="size-3">

@@ -13,14 +13,14 @@ As written, ADR-0002's transcription plan cannot run in ADR-0004's app.
 The user-facing requirement (asked 2026-07-17): the app must offer to
 download the AI models it needs, locally, from inside the editor. The
 `TranscriptionProvider` port in `packages/shared` already anticipates this —
-`isAvailable()` is documented as "capable in principle but unavailable
+`availability()` is documented as "capable in principle but unavailable
 because its model has not been downloaded yet" — but no runtime was ever
 chosen that the shipped shell can actually execute.
 
 Constraints that bound the choice:
 
-- **Offline-first (ADR-0002).** Transcription may *require a one-time
-  download*, but a missing model must degrade one feature, never the editor.
+- **Offline-first (ADR-0002).** Transcription may _require a one-time
+  download_, but a missing model must degrade one feature, never the editor.
 - **One-file install.** The download-and-run story (ADR-0004) must survive.
   A runtime that needs an installer, a Python environment, or PATH surgery
   breaks the product's core promise.
@@ -54,7 +54,7 @@ Concretely:
    CPU fallback always works.
 5. **ADR-0002 stands amended** on the named engine only: "Faster-Whisper /
    WhisperX" → "whisper.cpp." Everything else in ADR-0002 (local compute,
-   thin server) is unchanged — this ADR is the *implementation* of that
+   thin server) is unchanged — this ADR is the _implementation_ of that
    decision for the shell we actually built, not a reversal of it.
 
 ## Consequences
@@ -68,7 +68,7 @@ Concretely:
 - Abort is enforceable — a killed sidecar process is a killed transcription,
   satisfying the port's resource-leak clause.
 - The provider is just an implementation of the existing port, so a future
-  plugin can ship a *different* engine without touching core — the
+  plugin can ship a _different_ engine without touching core — the
   plugin-readiness bar in the constitution.
 
 **Bad, and accepted:**

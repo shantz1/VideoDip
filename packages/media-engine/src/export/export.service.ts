@@ -56,11 +56,20 @@ export function buildExportArgs(
       ),
     );
   }
-  if (clips.some((clip) => clip.duration <= 0)) {
+  if (
+    clips.some(
+      (clip) =>
+        clip.src.trim().length === 0 ||
+        !Number.isFinite(clip.sourceStart) ||
+        clip.sourceStart < 0 ||
+        !Number.isFinite(clip.duration) ||
+        clip.duration <= 0,
+    )
+  ) {
     return err(
       appError(
         'VALIDATION',
-        'A clip has zero or negative duration.',
+        'A clip has an invalid source, offset, or duration.',
         'Remove or re-trim the broken clip, then export again.',
       ),
     );
@@ -73,13 +82,23 @@ export function buildExportArgs(
     height <= 0 ||
     width % 2 !== 0 ||
     height % 2 !== 0 ||
-    !(fps > 0)
+    !Number.isFinite(fps) ||
+    fps <= 0
   ) {
     return err(
       appError(
         'VALIDATION',
         `Invalid output geometry: ${width}x${height} @ ${fps}fps.`,
         'Pick a standard aspect ratio and frame rate.',
+      ),
+    );
+  }
+  if (settings.outputPath.trim().length === 0) {
+    return err(
+      appError(
+        'VALIDATION',
+        'The output path is empty.',
+        'Choose where to save the exported video, then export again.',
       ),
     );
   }

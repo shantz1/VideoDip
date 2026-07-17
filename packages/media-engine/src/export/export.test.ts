@@ -48,6 +48,33 @@ describe('buildExportArgs', () => {
     if (!result.ok) expect(result.error.code).toBe('VALIDATION');
   });
 
+  it('rejects non-finite or negative source timing and empty locators', () => {
+    const invalidClips = [
+      clip({ sourceStart: ms(-1) }),
+      clip({ duration: ms(Number.NaN) }),
+      clip({ src: '   ' }),
+    ];
+
+    for (const invalidClip of invalidClips) {
+      const result = buildExportArgs([invalidClip], SETTINGS);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('VALIDATION');
+    }
+  });
+
+  it('rejects non-finite frame rates and an empty output path', () => {
+    const invalidSettings = [
+      { ...SETTINGS, fps: Number.POSITIVE_INFINITY },
+      { ...SETTINGS, outputPath: '   ' },
+    ];
+
+    for (const settings of invalidSettings) {
+      const result = buildExportArgs([clip()], settings);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('VALIDATION');
+    }
+  });
+
   it('rejects odd output dimensions (H.264 4:2:0 requires even)', () => {
     const result = buildExportArgs([clip()], { ...SETTINGS, width: 1081 });
     expect(result.ok).toBe(false);

@@ -5,8 +5,8 @@ import { Button, cn } from '@videodip/ui';
 import { Maximize2, Pause, Play, SkipBack, SkipForward } from 'lucide-react';
 import { useState } from 'react';
 import { useEditorStore, type AspectRatio } from '../editor.store';
+import { useEditorHost } from '../host/editor-host';
 import { formatTimecode } from '../lib/timecode';
-import { toggleFullscreen } from '../lib/toggle-fullscreen';
 import { PreviewPlayer } from './preview-player';
 
 /**
@@ -34,7 +34,7 @@ const ASPECT_RATIO_CSS: Record<AspectRatio, string> = {
  */
 export function PreviewCanvas() {
   return (
-    <main className="flex min-w-0 flex-1 flex-col bg-surface-sunken">
+    <main className="bg-surface-sunken flex min-w-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 items-center justify-center p-6">
         <Stage />
       </div>
@@ -53,7 +53,7 @@ function Stage() {
         // aspect-ratio containment shrink whichever axis is over-constrained
         // — needed once 16:9 can appear in a portrait-shaped window.
         'relative h-full max-h-full max-w-full overflow-hidden rounded-lg',
-        'bg-canvas shadow-lg ring-1 ring-border-subtle',
+        'bg-canvas ring-border-subtle shadow-lg ring-1',
       )}
       style={{ aspectRatio: ASPECT_RATIO_CSS[aspectRatio] }}
     >
@@ -65,6 +65,7 @@ function Stage() {
 }
 
 function TransportBar() {
+  const { toggleFullscreen } = useEditorHost();
   const isPlaying = useEditorStore((s) => s.isPlaying);
   const playhead = useEditorStore((s) => s.playhead);
   const duration = useEditorStore((s) => s.duration);
@@ -86,7 +87,7 @@ function TransportBar() {
     <div
       className={cn(
         'flex h-11 shrink-0 items-center justify-center gap-2 px-3',
-        'border-t border-border-subtle bg-surface-base',
+        'border-border-subtle bg-surface-base border-t',
       )}
     >
       <Button
