@@ -1,10 +1,13 @@
 import { z } from 'zod';
+import { ms, normalized } from '../branded/branded.js';
 import {
   assetIdSchema,
   clipIdSchema,
   mediaLocatorSchema,
   millisecondsSchema,
+  normalizedSchema,
   projectIdSchema,
+  segmentIdSchema,
   trackIdSchema,
 } from './primitive.schema.js';
 
@@ -44,17 +47,91 @@ export const projectMediaItemSchema = z.strictObject({
   metadata: mediaMetadataSchema.nullable(),
 });
 
-const projectClipSchema = z.strictObject({
-  id: clipIdSchema,
-  trackId: trackIdSchema,
-  assetId: assetIdSchema,
-  start: millisecondsSchema,
-  duration: millisecondsSchema.refine(
-    (duration) => duration > 0,
-    'Clip duration must be positive.',
-  ),
-  sourceStart: millisecondsSchema,
-});
+const projectClipSchema = z
+  .strictObject({
+    id: clipIdSchema,
+    trackId: trackIdSchema,
+    assetId: assetIdSchema,
+    start: millisecondsSchema,
+    duration: millisecondsSchema.refine(
+      (duration) => duration > 0,
+      'Clip duration must be positive.',
+    ),
+    sourceStart: millisecondsSchema,
+    transform: z
+      .strictObject({
+        positionX: z.number().finite().min(-10).max(10),
+        positionY: z.number().finite().min(-10).max(10),
+        scaleX: z.number().finite().positive().max(100),
+        scaleY: z.number().finite().positive().max(100),
+        rotation: z.number().finite().min(-36_000).max(36_000),
+      })
+      .default({ positionX: 0, positionY: 0, scaleX: 1, scaleY: 1, rotation: 0 }),
+    opacity: normalizedSchema.default(normalized(1)),
+    blendMode: z
+      .enum(['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten'])
+      .default('normal'),
+    isEnabled: z.boolean().default(true),
+    metadata: z
+      .record(
+        z.string().trim().min(1).max(128),
+        z.union([z.string(), z.number().finite(), z.boolean(), z.null()]),
+      )
+      .refine((metadata) => Object.keys(metadata).length <= 64, 'Clip metadata has too many keys.')
+      .default({}),
+    animation: z
+      .array(
+        z.strictObject({
+          property: z.enum(['positionX', 'positionY', 'scaleX', 'scaleY', 'rotation', 'opacity']),
+          offset: millisecondsSchema,
+          value: z.number().finite(),
+          easing: z.enum(['linear', 'ease-in', 'ease-out', 'ease-in-out']),
+        }),
+      )
+      .default([]),
+    audio: z
+      .strictObject({
+        volume: normalizedSchema,
+        isMuted: z.boolean(),
+        fadeIn: millisecondsSchema,
+        fadeOut: millisecondsSchema,
+      })
+      .default({
+        volume: normalized(1),
+        isMuted: false,
+        fadeIn: ms(0),
+        fadeOut: ms(0),
+      }),
+  })
+  .superRefine((clip, context) => {
+    const keys = new Set<string>();
+    for (const [index, keyframe] of clip.animation.entries()) {
+      const key = `${keyframe.property}:${keyframe.offset}`;
+      const valueIsValid =
+        keyframe.property === 'opacity'
+          ? keyframe.value >= 0 && keyframe.value <= 1
+          : keyframe.property === 'scaleX' || keyframe.property === 'scaleY'
+            ? keyframe.value > 0 && keyframe.value <= 100
+            : keyframe.property === 'positionX' || keyframe.property === 'positionY'
+              ? Math.abs(keyframe.value) <= 10
+              : Math.abs(keyframe.value) <= 36_000;
+      if (keys.has(key) || keyframe.offset > clip.duration || !valueIsValid) {
+        context.addIssue({
+          code: 'custom',
+          path: ['animation', index],
+          message: 'Keyframes must be unique, in range, and valid for their property.',
+        });
+      }
+      keys.add(key);
+    }
+    if (clip.audio.fadeIn > clip.duration || clip.audio.fadeOut > clip.duration) {
+      context.addIssue({
+        code: 'custom',
+        path: ['audio'],
+        message: 'Audio fades must stay within the clip duration.',
+      });
+    }
+  });
 
 const projectTrackSchema = z
   .strictObject({
@@ -97,6 +174,117 @@ const projectTrackSchema = z
     }
   });
 
+const subtitleStyleSchema = z.strictObject({
+  fontFamily: z.string().trim().min(1).max(256).nullable(),
+  fontSize: z.number().finite().positive().max(1000).nullable(),
+  foreground: z.string().trim().min(1).max(128).nullable(),
+  background: z.string().trim().min(1).max(128).nullable(),
+  isBold: z.boolean(),
+  isItalic: z.boolean(),
+  isUnderlined: z.boolean(),
+  alignment: z.enum(['start', 'center', 'end']),
+  positionX: normalizedSchema,
+  positionY: normalizedSchema,
+  animation: z.enum(['none', 'fade', 'pop', 'slide-up']).default('fade'),
+});
+
+const subtitleStylePatchSchema = subtitleStyleSchema.partial();
+
+const subtitleWordSchema = z
+  .strictObject({
+    id: z.string().trim().min(1).max(512),
+    text: z.string().trim().min(1).max(1000),
+    start: millisecondsSchema,
+    end: millisecondsSchema,
+    confidence: normalizedSchema.nullable(),
+  })
+  .refine((word) => word.end > word.start, 'Subtitle word duration must be positive.');
+
+const subtitleSegmentSchema = z
+  .strictObject({
+    id: segmentIdSchema,
+    start: millisecondsSchema,
+    end: millisecondsSchema,
+    text: z.string().trim().min(1).max(10_000),
+    words: z.array(subtitleWordSchema),
+    style: subtitleStylePatchSchema,
+    speaker: z.string().trim().min(1).max(256).nullable(),
+  })
+  .superRefine((segment, context) => {
+    if (segment.end <= segment.start) {
+      context.addIssue({
+        code: 'custom',
+        path: ['end'],
+        message: 'Cue duration must be positive.',
+      });
+    }
+    const orderedWords = [...segment.words].sort((left, right) => left.start - right.start);
+    for (const [index, word] of orderedWords.entries()) {
+      const previous = orderedWords[index - 1];
+      if (
+        word.start < segment.start ||
+        word.end > segment.end ||
+        (previous !== undefined && previous.end > word.start)
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['words', index],
+          message: 'Word timing must be ordered and contained by its cue.',
+        });
+      }
+    }
+  });
+
+/** Persisted subtitle document shared by desktop archives and browser storage. */
+export const projectSubtitleDocumentSchema = z
+  .strictObject({
+    version: z.literal(1),
+    language: z.string().trim().min(1).max(64).nullable(),
+    segments: z.array(subtitleSegmentSchema),
+    defaultStyle: subtitleStyleSchema,
+  })
+  .superRefine((document, context) => {
+    const ids = new Set<string>();
+    const ordered = [...document.segments].sort((left, right) => left.start - right.start);
+    for (const [index, segment] of ordered.entries()) {
+      if (ids.has(segment.id)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['segments', index, 'id'],
+          message: 'Subtitle cue ids must be unique.',
+        });
+      }
+      ids.add(segment.id);
+      const previous = ordered[index - 1];
+      if (previous !== undefined && previous.end > segment.start) {
+        context.addIssue({
+          code: 'custom',
+          path: ['segments', index, 'start'],
+          message: 'Subtitle cues must not overlap.',
+        });
+      }
+    }
+  });
+
+const emptySubtitleDocument = {
+  version: 1 as const,
+  language: null,
+  segments: [],
+  defaultStyle: {
+    fontFamily: null,
+    fontSize: null,
+    foreground: null,
+    background: null,
+    isBold: false,
+    isItalic: false,
+    isUnderlined: false,
+    alignment: 'center' as const,
+    positionX: normalized(0.5),
+    positionY: normalized(0.88),
+    animation: 'fade' as const,
+  },
+};
+
 /** Complete versioned project snapshot crossing IPC and disk boundaries. */
 export const projectSnapshotSchema = z
   .strictObject({
@@ -106,6 +294,7 @@ export const projectSnapshotSchema = z
     aspectRatio: projectAspectRatioSchema,
     timeline: z.strictObject({ tracks: z.array(projectTrackSchema) }),
     mediaItems: z.array(projectMediaItemSchema),
+    subtitles: projectSubtitleDocumentSchema.default(emptySubtitleDocument),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })

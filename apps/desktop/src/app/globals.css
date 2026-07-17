@@ -13,5 +13,5 @@
    outside this app's tree, so their class names are invisible to the scanner
    unless declared here — without this, Button renders unstyled in production
    with no error. */
-@source "../../src";
-@source "../../../../packages/ui/src";
+@source '../../src';
+@source '../../../../packages/ui/src';

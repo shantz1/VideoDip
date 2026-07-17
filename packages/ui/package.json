@@ -14,7 +14,10 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist", "src/styles"],
+  "files": [
+    "dist",
+    "src/styles"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",

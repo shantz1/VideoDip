@@ -7,8 +7,13 @@ import { VideoDipComposition } from '@videodip/renderer';
 import { useEffect, useMemo, useRef } from 'react';
 import { useEditorStore, type AspectRatio } from '../editor.store';
 import { useEditorHost } from '../host/editor-host';
-import { PROJECT_FPS, toCompositionClips } from '../lib/composition-adapter';
+import {
+  PROJECT_FPS,
+  toCompositionClips,
+  toCompositionSubtitles,
+} from '../lib/composition-adapter';
 import { useProjectStore } from '../project.store';
+import { useSubtitleStore } from '../subtitle.store';
 
 /**
  * Composition pixel dimensions per aspect ratio.
@@ -48,6 +53,7 @@ export function PreviewPlayer() {
   const { resolveMediaSource } = useEditorHost();
 
   const documentValue = useProjectStore((s) => s.document);
+  const subtitleDocument = useSubtitleStore((state) => state.document);
   const mediaItems = useEditorStore((s) => s.mediaItems);
   const aspectRatio = useEditorStore((s) => s.aspectRatio);
   const isPlaying = useEditorStore((s) => s.isPlaying);
@@ -72,7 +78,12 @@ export function PreviewPlayer() {
     return toCompositionClips(documentValue, resolveAsset);
   }, [documentValue, mediaItems, resolveMediaSource]);
 
-  const durationInFrames = Math.max(1, msToFrames(getDuration(documentValue), PROJECT_FPS));
+  const subtitleDuration = subtitleDocument.segments.at(-1)?.end ?? 0;
+  const durationInFrames = Math.max(
+    1,
+    msToFrames(Math.max(getDuration(documentValue), subtitleDuration) as never, PROJECT_FPS),
+  );
+  const subtitles = useMemo(() => toCompositionSubtitles(subtitleDocument), [subtitleDocument]);
 
   // store.isPlaying → player transport.
   useEffect(() => {
@@ -116,7 +127,7 @@ export function PreviewPlayer() {
     () => ({ fps: PROJECT_FPS, width, height, durationInFrames }),
     [width, height, durationInFrames],
   );
-  const inputProps = useMemo(() => ({ clips, settings }), [clips, settings]);
+  const inputProps = useMemo(() => ({ clips, subtitles, settings }), [clips, subtitles, settings]);
 
   return (
     <Player

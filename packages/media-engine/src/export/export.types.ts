@@ -17,6 +17,27 @@ export interface ExportClip {
   readonly sourceStart: Milliseconds;
   /** How much of the source this clip plays. Must be positive. */
   readonly duration: Milliseconds;
+  readonly transform: {
+    readonly positionX: number;
+    readonly positionY: number;
+    readonly scaleX: number;
+    readonly scaleY: number;
+    readonly rotation: number;
+  };
+  readonly opacity: number;
+  readonly blendMode: 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten';
+  readonly animation: readonly {
+    readonly property: string;
+    readonly offset: Milliseconds;
+    readonly value: number;
+    readonly easing: string;
+  }[];
+  readonly audio: {
+    readonly volume: number;
+    readonly isMuted: boolean;
+    readonly fadeIn: Milliseconds;
+    readonly fadeOut: Milliseconds;
+  };
 }
 
 /**
@@ -35,4 +56,8 @@ export interface ExportSettings {
   readonly fps: number;
   /** Absolute path the encoded file is written to. Overwritten if it exists. */
   readonly outputPath: string;
+  /** H.264 constant-rate-factor quality. Lower means larger and higher quality. */
+  readonly crf?: number;
+  readonly encoderPreset?: 'veryfast' | 'fast' | 'medium';
+  readonly audioBitrate?: '128k' | '192k' | '256k';
 }

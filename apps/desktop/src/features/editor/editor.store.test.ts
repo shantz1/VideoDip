@@ -202,6 +202,15 @@ describe('project', () => {
     expect(state().isDirty).toBe(false);
   });
 
+  it('renames the project as a durable edit', () => {
+    useEditorStore.setState({ projectName: 'Before' });
+    state().renameProject('After');
+
+    expect(state().projectName).toBe('After');
+    expect(state().isDirty).toBe(true);
+    expect(state().editRevision).toBe(1);
+  });
+
   it('restores persisted project metadata without marking it dirty', () => {
     const item = mediaItem('/restored.mp4');
     state().restoreProject({

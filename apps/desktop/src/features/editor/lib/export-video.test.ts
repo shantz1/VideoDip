@@ -54,8 +54,8 @@ describe('toExportClips', () => {
     const clips = unwrap(toExportClips(doc, (id) => paths.get(id)));
 
     expect(clips).toEqual([
-      { src: 'C:\\media\\a.mp4', sourceStart: 0, duration: 2000 },
-      { src: 'C:\\media\\b.mp4', sourceStart: 250, duration: 1000 },
+      expect.objectContaining({ src: 'C:\\media\\a.mp4', sourceStart: 0, duration: 2000 }),
+      expect.objectContaining({ src: 'C:\\media\\b.mp4', sourceStart: 250, duration: 1000 }),
     ]);
   });
 
@@ -71,5 +71,19 @@ describe('toExportClips', () => {
       expect(result.error.code).toBe('NOT_FOUND');
       expect(result.error.recovery).toContain('re-import');
     }
+  });
+
+  it('omits disabled clips from the native export view', () => {
+    let doc = createEmptyTimeline();
+    doc = unwrap(
+      addClip(doc, {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+        isEnabled: false,
+      }),
+    );
+    expect(unwrap(toExportClips(doc, () => 'C:\\media\\a.mp4'))).toEqual([]);
   });
 });

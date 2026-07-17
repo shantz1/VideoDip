@@ -6,7 +6,10 @@ vi.mock('remotion', () => ({
   AbsoluteFill: ({ children }: { children: ReactNode }) => <main>{children}</main>,
   Sequence: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   Audio: ({ src }: { src: string }) => <span data-media="audio" data-src={src} />,
-  Video: ({ src }: { src: string }) => <span data-media="video" data-src={src} />,
+  Video: ({ src, style }: { src: string; style?: unknown }) => (
+    <span data-media="video" data-src={src} data-style={JSON.stringify(style)} />
+  ),
+  useCurrentFrame: () => 0,
 }));
 
 import {
@@ -32,12 +35,18 @@ const clip = (overrides: Partial<CompositionClip> = {}): CompositionClip => ({
   startFrame: 0,
   durationInFrames: 30,
   sourceStartFrame: 0,
+  transform: { positionX: 0, positionY: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+  opacity: 1,
+  blendMode: 'normal',
+  isEnabled: true,
+  animation: [],
+  audio: { volume: 1, isMuted: false, fadeInFrames: 0, fadeOutFrames: 0 },
   ...overrides,
 });
 
 describe('VideoDip composition contract', () => {
   it('accepts a serializable, headless-safe render input', () => {
-    const input: VideoDipCompositionProps = { clips: [clip()], settings: SETTINGS };
+    const input: VideoDipCompositionProps = { clips: [clip()], subtitles: [], settings: SETTINGS };
     expect(videoDipCompositionSchema.safeParse(input).success).toBe(true);
     expect(JSON.parse(JSON.stringify(input))).toEqual(input);
   });
@@ -45,13 +54,16 @@ describe('VideoDip composition contract', () => {
   it('rejects invalid frame boundaries before Remotion renders', () => {
     const result = videoDipCompositionSchema.safeParse({
       clips: [clip({ durationInFrames: 0 })],
+      subtitles: [],
       settings: SETTINGS,
     });
     expect(result.success).toBe(false);
   });
 
   it('uses the same settings as headless composition metadata', () => {
-    expect(getCompositionMetadata({ clips: [], settings: SETTINGS })).toEqual(SETTINGS);
+    expect(getCompositionMetadata({ clips: [], subtitles: [], settings: SETTINGS })).toEqual(
+      SETTINGS,
+    );
   });
 
   it('dispatches by media kind, independent of arbitrary track metadata', () => {
@@ -61,11 +73,98 @@ describe('VideoDip composition contract', () => {
           clip({ id: 'overlay', trackKind: 'plugin:overlay', mediaKind: 'video' }),
           clip({ id: 'music', trackKind: 'plugin:music-bed', mediaKind: 'audio' }),
         ]}
+        subtitles={[]}
         settings={SETTINGS}
       />,
     );
 
     expect(markup).toContain('data-media="video"');
     expect(markup).toContain('data-media="audio"');
+  });
+
+  it('does not render a disabled clip', () => {
+    const markup = renderToStaticMarkup(
+      <VideoDipComposition
+        clips={[clip({ isEnabled: false })]}
+        subtitles={[]}
+        settings={SETTINGS}
+      />,
+    );
+    expect(markup).not.toContain('data-media="video"');
+  });
+
+  it('rejects invalid transform and opacity values at the render boundary', () => {
+    expect(
+      videoDipCompositionSchema.safeParse({
+        clips: [clip({ transform: { ...clip().transform, scaleX: 0 }, opacity: 2 })],
+        subtitles: [],
+        settings: SETTINGS,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('applies clip-relative keyframes to visual style', () => {
+    const markup = renderToStaticMarkup(
+      <VideoDipComposition
+        clips={[
+          clip({
+            animation: [
+              { property: 'opacity', frame: 0, value: 0.25, easing: 'linear' },
+              { property: 'opacity', frame: 15, value: 1, easing: 'ease-out' },
+            ],
+          }),
+        ]}
+        subtitles={[]}
+        settings={SETTINGS}
+      />,
+    );
+    expect(markup).toContain('&quot;opacity&quot;:0.25');
+  });
+
+  it('accepts serializable per-clip audio mix settings', () => {
+    expect(
+      videoDipCompositionSchema.safeParse({
+        clips: [
+          clip({
+            mediaKind: 'audio',
+            audio: { volume: 0.5, isMuted: false, fadeInFrames: 5, fadeOutFrames: 10 },
+          }),
+        ],
+        subtitles: [],
+        settings: SETTINGS,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('renders resolved subtitle cues above media', () => {
+    const markup = renderToStaticMarkup(
+      <VideoDipComposition
+        clips={[]}
+        subtitles={[
+          {
+            id: 'caption-a',
+            startFrame: 0,
+            durationInFrames: 30,
+            text: 'Hello world',
+            words: [],
+            style: {
+              fontFamily: null,
+              fontSize: null,
+              foreground: null,
+              background: null,
+              isBold: true,
+              isItalic: false,
+              isUnderlined: false,
+              alignment: 'center',
+              positionX: 0.5,
+              positionY: 0.88,
+              animation: 'fade',
+            },
+          },
+        ]}
+        settings={SETTINGS}
+      />,
+    );
+    expect(markup).toContain('Hello world');
   });
 });

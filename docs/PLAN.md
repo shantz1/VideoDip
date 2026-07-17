@@ -7,17 +7,17 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
 
 ## Now
 
-- [ ] **Project browser + portable `.videodip` archives** — durable local
-      snapshots and autosave are complete. Add the list/open/rename/delete UI,
-      then the portable archive container (`project.json`, subtitles, previews,
-      cache manifest and optional packaged assets) without changing the shared
-      editor state model.
-- [ ] **Cancellable media workers** — add cancellation/timeouts and bounded
-      concurrency before thumbnail and waveform generation. The worker/cache
-      pipeline must stay behind the Media Engine ports and be measured before
-      optimization.
+- [ ] **Next unblocked product batch** — measure the published performance
+      budgets, add durable export history, implement reversible silence-removal
+      suggestions, design and implement GPU-safe color grading, and build the
+      plugin manager/runtime isolation required by ADR-0009.
 
-## Queued (user-requested, not yet started)
+- [ ] **Decision review** — remaining runtime/infrastructure work is gated by
+      approval for Remotion's headless sidecar, online/cloud scope, and signed
+      release/auto-update infrastructure. ADR-0007 is accepted and its Windows
+      CPU Whisper path is implemented.
+
+## Queued (decision-gated or requires product infrastructure)
 
 - [ ] **Multilingual Whisper acceptance matrix** — all languages exposed by
       the bundled multilingual model remain selectable, with explicit
@@ -47,26 +47,79 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
       serve as the update-manifest host until `apps/api` is real, which
       `tauri-plugin-updater` supports out of the box.
 
-## Needs a decision before building — do not start silently
-
-- [ ] **AI model download (Whisper or equivalent)** — ADR-0002 names
-      Faster-Whisper/WhisperX, both Python-based. The desktop shell has no
-      Node _and_ no Python runtime bundled, so shipping either means bundling
-      a Python distribution inside a Tauri app — a real architectural cost
-      nobody has signed off on. A Rust-native alternative (e.g. `whisper.cpp`
-      as a Tauri sidecar binary, downloading GGML model files directly) avoids
-      that entirely but changes the named runtime in ADR-0002. Needs an ADR
-      before implementation starts, not just a wired button.
-
 ## Done (this session, 2026-07-17)
+
+- **Visible canvas layout switcher (2026-07-18)** — added a compact top-toolbar
+  selector for Reel/Short 9:16, horizontal YouTube/video 16:9, social portrait
+  4:5 and classic portrait 3:4. It updates the existing persisted project
+  aspect ratio shared by preview and export, and registers Ctrl+Shift+R through
+  the central shortcut registry. Verified by the new toolbar interaction test,
+  all 25 workspace tasks (309 TypeScript tests), and an optimized desktop build.
+
+- **Local multilingual AI subtitles (2026-07-18)** — accepted ADR-0007 and
+  implemented the Windows CPU whisper.cpp sidecar path, verified runtime/model
+  downloads, real progress and cancellation, injected provider/model ports,
+  trimmed-clip timestamp mapping, automatic subtitle timeline insertion, all
+  99 supported language choices, global/per-cue colors, and reusable caption
+  entrance animations. Cross-language accuracy fixtures and non-Windows/GPU
+  distribution remain queued. Verified with all 25 workspace tasks (309
+  TypeScript tests), 16 Rust tests, an optimized Next build, the pinned runtime
+  provisioning command, and an isolated Tauri build containing the sidecar and
+  its runtime DLLs.
+
+- **Integrated editor feature batch (2026-07-18)** — completed clip transforms,
+  metadata, keyframes and audio fades; cached waveform display; command palette;
+  CI; persisted subtitle documents with word timing, shared timeline/preview
+  rendering and SRT/WebVTT/ASS interchange; strict data-only template engine
+  with built-in caption styles; and named delivery presets. Verified with all
+  25 workspace tasks, 303 TypeScript tests, an optimized Next build, 14 Rust
+  tests, Rust formatting and `git diff --check`.
+
+- **Cancellable FFmpeg exports** — long-running exports now share the native
+  task registry with derived media, including cancellation remembered before
+  child-process activation. Progress events are scoped to a task id, a
+  30-minute host timeout terminates FFmpeg, the toolbar exposes a visible
+  Cancel action, and Escape is registered centrally. Cancellation is a normal
+  user outcome; timeout remains a recoverable typed error. Verified with 14
+  Rust tests, 125 Desktop tests, Rust formatting/check and desktop typecheck.
+
+- **Cancellable thumbnails + waveform cache** — added a framework-free,
+  cache-first Media Engine service with Zod-validated requests/results,
+  bounded concurrency, queue-inclusive timeouts, process cancellation and
+  monotonic progress. The desktop Rust host streams source files through
+  FFmpeg, writes only bounded derived data, rejects unsafe staging/cache paths,
+  and atomically commits hashed cache directories. Video and audio library rows
+  now show thumbnail/waveform generation progress, recoverable errors and cache
+  readiness through the same injected editor host used by desktop/browser.
+  Verified with 33 Media Engine tests, 125 Desktop tests, 14 Rust tests and all
+  19 workspace verification tasks.
+
+- **Portable `.videodip` project archives** — added a documented, versioned
+  standard-ZIP container with linked and portable export modes, streamed and
+  de-duplicated embedded media, atomic destination replacement, and a
+  two-phase inspect/validate/import flow. Import rejects traversal, absolute or
+  non-normal paths, duplicate/unreferenced entries, unsupported versions,
+  excessive entry/size declarations, malformed snapshots, metadata mismatch,
+  and archive changes between validation and extraction. The shared host port,
+  desktop adapters, application commands, sidebar/project-menu controls,
+  progress/error states and central shortcuts use the same editor core. The
+  browser adapter returns a typed unsupported result until durable browser
+  media storage exists. Verified with 8 Rust tests, 37 Shared tests, and 121
+  Desktop tests; the format is specified in `docs/project-format.md`.
+
+- **Local project manager** — the Projects panel lists saved snapshots and can
+  open, rename, and two-step-delete inactive projects. New/open commands flush
+  dirty state before replacing the active document, closing the autosave
+  debounce data-loss window. The panel passed browser interaction QA and fits
+  its 240 px sidebar without horizontal overflow.
 
 - **Durable project snapshots + autosave** — added a strict versioned project
   schema, bundled SQLite/WAL storage and CRUD commands in Rust, matching Tauri
   and browser repositories behind the shared `ProjectRepository` port, newest
   project restore, and 750 ms debounced autosave. Revision-aware save
   completion cannot mark newer edits clean. Storage failures remain visible
-  and recoverable; portable `.videodip` archives and the project-picker UI are
-  intentionally still queued.
+  and recoverable; the project-picker UI and portable `.videodip` archive flow
+  are now complete.
 
 - **Package-by-package architecture pass complete** — Timeline, Shared, Media
   Engine, Renderer, Desktop editor, and Plugin SDK were reviewed in the agreed

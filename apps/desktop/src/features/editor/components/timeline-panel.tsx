@@ -15,6 +15,7 @@ import {
 import { formatTimecode } from '../lib/timecode';
 import { snapTimelineTime } from '../lib/timeline-snap';
 import { useProjectStore } from '../project.store';
+import { useSubtitleStore } from '../subtitle.store';
 
 const TRACK_HEIGHT = 44;
 const HEADER_WIDTH = 112;
@@ -68,6 +69,11 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
   const document = useProjectStore((s) => s.document);
   const removeClip = useProjectStore((s) => s.removeClip);
   const splitClip = useProjectStore((s) => s.splitClip);
+  const selectedSubtitleId = useSubtitleStore((state) => state.selectedSegmentId);
+  const subtitleDocument = useSubtitleStore((state) => state.document);
+  const selectSubtitle = useSubtitleStore((state) => state.select);
+  const removeSubtitle = useSubtitleStore((state) => state.remove);
+  const splitSubtitle = useSubtitleStore((state) => state.split);
 
   const fitTimeline = () => {
     if (viewportWidth <= 0) return;
@@ -84,16 +90,30 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
     selectedClip !== undefined &&
     playhead > selectedClip.start &&
     playhead < selectedClip.start + selectedClip.duration;
+  const selectedSubtitle = selectedSubtitleId
+    ? subtitleDocument.segments.find((segment) => segment.id === selectedSubtitleId)
+    : undefined;
+  const canSplitSubtitle =
+    selectedSubtitle !== undefined &&
+    playhead > selectedSubtitle.start &&
+    playhead < selectedSubtitle.end;
 
   const handleDelete = () => {
-    if (!selectedClipId) return;
-    removeClip(selectedClipId);
-    selectClip(null);
+    if (selectedClipId) {
+      removeClip(selectedClipId);
+      selectClip(null);
+    } else if (selectedSubtitleId) {
+      removeSubtitle(selectedSubtitleId);
+      selectSubtitle(null);
+    }
   };
 
   const handleSplit = () => {
-    if (!selectedClipId || !canSplit) return;
-    if (splitClip(selectedClipId, playhead).ok) selectClip(null);
+    if (selectedClipId && canSplit) {
+      if (splitClip(selectedClipId, playhead).ok) selectClip(null);
+    } else if (selectedSubtitleId && canSplitSubtitle) {
+      void splitSubtitle(selectedSubtitleId, playhead);
+    }
   };
 
   return (
@@ -102,7 +122,7 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
         size="icon-sm"
         variant="ghost"
         aria-label="Split clip at playhead"
-        disabled={!canSplit}
+        disabled={!canSplit && !canSplitSubtitle}
         onClick={handleSplit}
         leadingIcon={<Scissors />}
       />
@@ -110,7 +130,7 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
         size="icon-sm"
         variant="ghost"
         aria-label="Delete clip"
-        disabled={!selectedClipId}
+        disabled={!selectedClipId && !selectedSubtitleId}
         onClick={handleDelete}
         leadingIcon={<Trash2 />}
       />
@@ -199,6 +219,11 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
   const moveClip = useProjectStore((s) => s.moveClip);
   const trimClip = useProjectStore((s) => s.trimClip);
   const splitClip = useProjectStore((s) => s.splitClip);
+  const subtitleDocument = useSubtitleStore((state) => state.document);
+  const selectedSubtitleId = useSubtitleStore((state) => state.selectedSegmentId);
+  const selectSubtitle = useSubtitleStore((state) => state.select);
+  const splitSubtitle = useSubtitleStore((state) => state.split);
+  const setInspectorTab = useEditorStore((state) => state.setInspectorTab);
   const snapEnabled = useEditorStore((s) => s.snapEnabled);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -236,18 +261,32 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
     selectedClip !== undefined &&
     playhead > selectedClip.start &&
     playhead < selectedClip.start + selectedClip.duration;
+  const selectedSubtitle = selectedSubtitleId
+    ? subtitleDocument.segments.find((segment) => segment.id === selectedSubtitleId)
+    : undefined;
+  const canSplitSubtitleAtPlayhead =
+    selectedSubtitle !== undefined &&
+    playhead > selectedSubtitle.start &&
+    playhead < selectedSubtitle.end;
 
   const splitAtPlayhead = () => {
-    if (!selectedClipId || !canSplitAtPlayhead) return;
-    const result = splitClip(selectedClipId, playhead);
-    setEditError(result.ok ? null : result.error.recovery);
-    if (result.ok) selectClip(null);
+    if (selectedClipId && canSplitAtPlayhead) {
+      const result = splitClip(selectedClipId, playhead);
+      setEditError(result.ok ? null : result.error.recovery);
+      if (result.ok) selectClip(null);
+    } else if (selectedSubtitleId && canSplitSubtitleAtPlayhead) {
+      const result = splitSubtitle(selectedSubtitleId, playhead);
+      setEditError(result.ok ? null : result.error.recovery);
+    }
   };
 
   // The ruler must cover both the placeholder minimum and whatever real
   // clips exist — a clip placed past the placeholder's 60s must stay visible
   // and seekable rather than getting clipped by the ruler's own width.
-  const contentDuration = getDuration(projectDocument);
+  const contentDuration = Math.max(
+    getDuration(projectDocument),
+    subtitleDocument.segments.at(-1)?.end ?? 0,
+  );
   const viewDuration = Math.max(MIN_VIEW_DURATION, contentDuration);
   const width = (viewDuration / 1000) * zoom;
 
@@ -319,17 +358,68 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
                   }}
                 />
               ))}
+              {track.kind === 'subtitle' &&
+                subtitleDocument.segments.map((segment) => (
+                  <TimelineSubtitleCue
+                    key={segment.id}
+                    text={segment.text}
+                    start={segment.start}
+                    end={segment.end}
+                    zoom={zoom}
+                    selected={segment.id === selectedSubtitleId}
+                    onSelect={() => {
+                      selectClip(null);
+                      selectSubtitle(segment.id);
+                      setInspectorTab('subtitle');
+                    }}
+                  />
+                ))}
             </div>
           );
         })}
 
         <Playhead
           x={(playhead / 1000) * zoom}
-          canSplit={canSplitAtPlayhead}
+          canSplit={canSplitAtPlayhead || canSplitSubtitleAtPlayhead}
           onSplit={splitAtPlayhead}
         />
       </div>
     </div>
+  );
+}
+
+function TimelineSubtitleCue({
+  text,
+  start,
+  end,
+  zoom,
+  selected,
+  onSelect,
+}: {
+  readonly text: string;
+  readonly start: Milliseconds;
+  readonly end: Milliseconds;
+  readonly zoom: number;
+  readonly selected: boolean;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={text}
+      aria-label={`${text}, ${((end - start) / 1000).toFixed(2)} seconds`}
+      onClick={onSelect}
+      className={cn(
+        'bg-track-subtitle text-2xs text-text-on-brand absolute top-1 bottom-1 overflow-hidden rounded-sm px-1.5 text-left',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[--color-border-focus]',
+        selected
+          ? 'ring-offset-surface-base ring-2 ring-[--color-border-focus] ring-offset-1'
+          : 'hover:brightness-110',
+      )}
+      style={{ left: (start / 1000) * zoom, width: Math.max(((end - start) / 1000) * zoom, 4) }}
+    >
+      <span className="truncate">{text}</span>
+    </button>
   );
 }
 

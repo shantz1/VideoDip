@@ -67,6 +67,15 @@ describe('Tauri project repository', () => {
 });
 
 describe('browser project repository', () => {
+  it('resolves browser storage lazily so server rendering never reads window', async () => {
+    const getStorage = vi.fn(memoryStorage);
+    const repository = createBrowserProjectRepository(getStorage);
+
+    expect(getStorage).not.toHaveBeenCalled();
+    await repository.list();
+    expect(getStorage).toHaveBeenCalledOnce();
+  });
+
   it('round-trips, lists newest first, and deletes snapshots', async () => {
     const repository = createBrowserProjectRepository(memoryStorage());
     const newer = projectSnapshotSchema.parse({

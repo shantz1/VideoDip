@@ -4,6 +4,7 @@ import type { MediaLocator, ProjectId } from '../branded/branded.js';
 import type {
   ImportedMediaReference,
   MediaImportPort,
+  ProjectArchivePort,
   ProjectRepository,
 } from './platform.port.js';
 
@@ -69,5 +70,20 @@ describe('platform ports', () => {
       'C:\\media\\clip.mp4',
       'opfs://media/clip.mp4',
     ]);
+  });
+
+  it('models archive cancellation as a successful null result', async () => {
+    const archives: ProjectArchivePort<TestProject> = {
+      exportArchive: async () => ok(null),
+      importArchive: async () => ok(null),
+    };
+
+    await expect(archives.importArchive()).resolves.toEqual(ok(null));
+    await expect(
+      archives.exportArchive(
+        { id: 'project-a' as ProjectId, name: 'Test' },
+        { includeMedia: true },
+      ),
+    ).resolves.toEqual(ok(null));
   });
 });

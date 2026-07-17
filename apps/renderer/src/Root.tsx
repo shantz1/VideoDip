@@ -22,6 +22,7 @@ const DEFAULT_WIDTH = 1080;
 const DEFAULT_HEIGHT = 1920;
 const DEFAULT_PROPS: VideoDipCompositionProps = {
   clips: [],
+  subtitles: [],
   settings: {
     fps: DEFAULT_FPS,
     durationInFrames: DEFAULT_DURATION_IN_FRAMES,

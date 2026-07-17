@@ -43,8 +43,8 @@ export function EmptyState({
         <Icon className="size-5" />
       </div>
 
-      <p className="text-sm font-medium text-text-primary">{title}</p>
-      <p className="mt-1 max-w-[24ch] text-xs leading-relaxed text-text-tertiary">{description}</p>
+      <p className="text-text-primary text-sm font-medium">{title}</p>
+      <p className="text-text-tertiary mt-1 max-w-[24ch] text-xs leading-relaxed">{description}</p>
 
       {action && (
         <Button

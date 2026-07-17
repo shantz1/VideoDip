@@ -53,7 +53,7 @@
   --color-neutral-700: oklch(33% 0.013 260);
   --color-neutral-800: oklch(24% 0.012 260);
   --color-neutral-850: oklch(20% 0.011 260);
-  --color-neutral-900: oklch(16% 0.010 260);
+  --color-neutral-900: oklch(16% 0.01 260);
   --color-neutral-950: oklch(11% 0.008 260);
   --color-neutral-1000: oklch(7% 0.006 260);
 
@@ -243,7 +243,7 @@
   --shadow-glow: 0 0 24px -4px oklch(66% 0.21 295 / 40%);
 
   /* Glassmorphism, per the landing-page brief. */
-  --glass-bg: oklch(16% 0.010 260 / 60%);
+  --glass-bg: oklch(16% 0.01 260 / 60%);
   --glass-border: oklch(100% 0 0 / 8%);
   --glass-blur: 16px;
 }

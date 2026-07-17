@@ -19,6 +19,7 @@ const summaryListSchema = projectSummarySchema.array();
 export type InvokeRunner = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
 type ProjectStore = ProjectRepository<ProjectSnapshot, ProjectSummary>;
+type StorageProvider = Storage | (() => Storage);
 
 class BoundaryValidationError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -144,8 +145,12 @@ function writeBrowserProjects(storage: Storage, projects: readonly ProjectSnapsh
   storage.setItem(BROWSER_PROJECTS_KEY, JSON.stringify(projects));
 }
 
+function resolveStorage(provider: StorageProvider): Storage {
+  return typeof provider === 'function' ? provider() : provider;
+}
+
 /** Browser repository with the same contract and snapshot format as desktop SQLite. */
-export function createBrowserProjectRepository(storage: Storage): ProjectStore {
+export function createBrowserProjectRepository(storageProvider: StorageProvider): ProjectStore {
   return {
     async list(signal) {
       return atStorageBoundary(
@@ -153,7 +158,7 @@ export function createBrowserProjectRepository(storage: Storage): ProjectStore {
         'Reload the page. If saved data is damaged, clear VideoDip site storage.',
         signal,
         () =>
-          readBrowserProjects(storage)
+          readBrowserProjects(resolveStorage(storageProvider))
             .map(({ id, name, updatedAt }) => ({ id, name, updatedAt }))
             .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
       );
@@ -165,7 +170,9 @@ export function createBrowserProjectRepository(storage: Storage): ProjectStore {
         'Choose another project or clear damaged VideoDip site storage.',
         signal,
         () => {
-          const project = readBrowserProjects(storage).find((candidate) => candidate.id === id);
+          const project = readBrowserProjects(resolveStorage(storageProvider)).find(
+            (candidate) => candidate.id === id,
+          );
           if (!project) throw new Error(`Project ${id} was not found.`);
           return project;
         },
@@ -179,6 +186,7 @@ export function createBrowserProjectRepository(storage: Storage): ProjectStore {
         signal,
         () => {
           const snapshot = validatedSnapshot(project);
+          const storage = resolveStorage(storageProvider);
           const projects = readBrowserProjects(storage).filter(
             (candidate) => candidate.id !== snapshot.id,
           );
@@ -193,6 +201,7 @@ export function createBrowserProjectRepository(storage: Storage): ProjectStore {
         'Reload the page and retry the delete operation.',
         signal,
         () => {
+          const storage = resolveStorage(storageProvider);
           writeBrowserProjects(
             storage,
             readBrowserProjects(storage).filter((candidate) => candidate.id !== id),

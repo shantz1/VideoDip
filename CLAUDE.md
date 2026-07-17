@@ -64,20 +64,20 @@ If you find yourself needing an inward-pointing import, you have found a design 
 
 ### Workspaces
 
-| Path | Purpose |
-| --- | --- |
-| `apps/desktop` | Tauri shell + Next.js editor UI. The product. |
-| `apps/web` | Marketing site + landing page. Deploys to the VPS. |
-| `apps/api` | NestJS. Licensing, registry, sync. Deliberately thin. |
-| `apps/renderer` | Remotion compositions. Headless-drivable. |
-| `apps/worker` | BullMQ consumers for transcription and export. |
-| `packages/ui` | Design system. Tokens, primitives, animations. |
-| `packages/timeline` | Timeline data model + operations. Framework-free. |
-| `packages/subtitle-engine` | Segments, words, styling, timing. Framework-free. |
-| `packages/media-engine` | FFmpeg orchestration, probing, thumbnails. |
-| `packages/template-engine` | Template resolution and composition. |
-| `packages/plugin-sdk` | Public plugin contract. Semver-stable. |
-| `packages/shared` | Types, interfaces, Zod schemas, utils. Zero deps. |
+| Path                       | Purpose                                               |
+| -------------------------- | ----------------------------------------------------- |
+| `apps/desktop`             | Tauri shell + Next.js editor UI. The product.         |
+| `apps/web`                 | Marketing site + landing page. Deploys to the VPS.    |
+| `apps/api`                 | NestJS. Licensing, registry, sync. Deliberately thin. |
+| `apps/renderer`            | Remotion compositions. Headless-drivable.             |
+| `apps/worker`              | BullMQ consumers for transcription and export.        |
+| `packages/ui`              | Design system. Tokens, primitives, animations.        |
+| `packages/timeline`        | Timeline data model + operations. Framework-free.     |
+| `packages/subtitle-engine` | Segments, words, styling, timing. Framework-free.     |
+| `packages/media-engine`    | FFmpeg orchestration, probing, thumbnails.            |
+| `packages/template-engine` | Template resolution and composition.                  |
+| `packages/plugin-sdk`      | Public plugin contract. Semver-stable.                |
+| `packages/shared`          | Types, interfaces, Zod schemas, utils. Zero deps.     |
 
 **`packages/shared` must have no runtime dependencies beyond `zod`.** Everything imports it; it imports nothing. Keep it that way.
 
@@ -131,7 +131,9 @@ export class SubtitleService {
 // Bad — untestable, hides its dependencies, pins us to one provider.
 import { whisper } from '../ai/whisper';
 export class SubtitleService {
-  transcribe() { return whisper.run(); }
+  transcribe() {
+    return whisper.run();
+  }
 }
 ```
 
@@ -205,12 +207,12 @@ Templates are data, not code. They must be expressible as JSON validated by a Zo
 
 Targets, measured not guessed:
 
-| Metric | Budget |
-| --- | --- |
-| Cold start (desktop) | < 2s |
-| Idle RAM | < 400 MB |
-| Timeline scrub | 60 fps at 4K |
-| Preview seek | < 100 ms |
+| Metric               | Budget       |
+| -------------------- | ------------ |
+| Cold start (desktop) | < 2s         |
+| Idle RAM             | < 400 MB     |
+| Timeline scrub       | 60 fps at 4K |
+| Preview seek         | < 100 ms     |
 
 Rules:
 

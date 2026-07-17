@@ -90,6 +90,38 @@ export interface TranscriptionAvailability {
   readonly detail?: string;
 }
 
+/** One locally installable model exposed without provider-specific detail. */
+export interface TranscriptionModelStatus {
+  readonly id: string;
+  readonly sizeBytes: number;
+  readonly quality: string;
+  readonly installed: boolean;
+}
+
+/** Runtime and model readiness used by a host-neutral model picker. */
+export interface TranscriptionModelRuntimeStatus {
+  readonly runtimeAvailable: boolean;
+  readonly models: readonly TranscriptionModelStatus[];
+}
+
+/**
+ * Installs and selects local transcription models through the active host.
+ *
+ * The editor depends on this port rather than any Whisper implementation, so
+ * another offline provider or plugin can drive the same model-management UI.
+ */
+export interface TranscriptionModelManager {
+  status(): Promise<Result<TranscriptionModelRuntimeStatus>>;
+  download(
+    modelId: string,
+    onProgress: (progress: number, stage: string) => void,
+    signal?: AbortSignal,
+  ): Promise<Result<void>>;
+  delete(modelId: string): Promise<Result<void>>;
+  select(modelId: string): void;
+  selected(): string;
+}
+
 /**
  * A speech-to-text engine.
  *

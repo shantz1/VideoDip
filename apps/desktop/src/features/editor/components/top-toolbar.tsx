@@ -2,12 +2,15 @@
 
 import type { AssetId } from '@videodip/shared';
 import { Button, buttonVariants, cn } from '@videodip/ui';
-import { Download, HardDrive, Redo2, Sparkles, Undo2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Download, HardDrive, Redo2, Sparkles, Undo2, X } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
 import { useShortcuts, type Shortcut } from '../../shortcuts/index';
 import { useEditorStore } from '../editor.store';
 import { useEditorHost } from '../host/editor-host';
+import { startNewProject as startNewProjectCommand } from '../lib/project-commands';
 import { useProjectStore } from '../project.store';
+import { useProjectArchiveController } from './project-archive-controller';
+import { CanvasLayoutSelector } from './canvas-layout-selector';
 
 interface MenuItem {
   readonly label: string;
@@ -22,25 +25,29 @@ interface MenuDefinition {
 
 /** The application toolbar, command menus, and primary editor actions. */
 export function TopToolbar() {
-  const { importMedia } = useEditorHost();
+  const archiveController = useProjectArchiveController();
+  const { importMedia, projects } = useEditorHost();
   const projectName = useEditorStore((state) => state.projectName);
   const isDirty = useEditorStore((state) => state.isDirty);
-  const newProject = useEditorStore((state) => state.newProject);
   const setActivePanel = useEditorStore((state) => state.setActivePanel);
   const addMediaItems = useEditorStore((state) => state.addMediaItems);
   const toggleSidebar = useEditorStore((state) => state.toggleSidebar);
   const toggleInspector = useEditorStore((state) => state.toggleInspector);
-  const resetProject = useProjectStore((state) => state.reset);
   const undo = useProjectStore((state) => state.undo);
   const redo = useProjectStore((state) => state.redo);
   const canUndo = useProjectStore((state) => state.past.length > 0);
   const canRedo = useProjectStore((state) => state.future.length > 0);
   const [isImporting, setIsImporting] = useState(false);
+  const [isChangingProject, setIsChangingProject] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
 
   const startNewProject = () => {
-    newProject();
-    resetProject();
+    setCommandError(null);
+    setIsChangingProject(true);
+    void startNewProjectCommand(projects).then((result) => {
+      if (!result.ok) setCommandError(result.error.recovery);
+      setIsChangingProject(false);
+    });
   };
 
   const handleImport = () => {
@@ -58,7 +65,26 @@ export function TopToolbar() {
     {
       label: 'Project',
       items: [
-        { label: 'New project', action: startNewProject },
+        {
+          label: isChangingProject ? 'Creating project…' : 'New project',
+          action: startNewProject,
+          disabled: isChangingProject,
+        },
+        {
+          label: 'Import .videodip…',
+          action: () => void archiveController.importArchive(),
+          disabled: archiveController.isBusy,
+        },
+        {
+          label: 'Export portable .videodip…',
+          action: () => void archiveController.exportPortable(),
+          disabled: archiveController.isBusy || projectName === null,
+        },
+        {
+          label: 'Export linked .videodip…',
+          action: () => void archiveController.exportLinked(),
+          disabled: archiveController.isBusy || projectName === null,
+        },
         {
           label: isImporting ? 'Importing media…' : 'Import media…',
           action: handleImport,
@@ -142,6 +168,8 @@ export function TopToolbar() {
 
         <div className="bg-border-subtle mx-1 h-4 w-px" />
 
+        <CanvasLayoutSelector />
+
         <Button
           size="sm"
           variant="ghost"
@@ -193,7 +221,9 @@ function ExportButton() {
   const documentValue = useProjectStore((state) => state.document);
   const mediaItems = useEditorStore((state) => state.mediaItems);
   const aspectRatio = useEditorStore((state) => state.aspectRatio);
+  const exportPresetId = useEditorStore((state) => state.exportPresetId);
   const [phase, setPhase] = useState<ExportPhase>({ kind: 'idle' });
+  const exportController = useRef<AbortController | null>(null);
 
   const hasClips = documentValue.tracks.some(
     (track) => track.kind === 'video' && track.clips.length > 0,
@@ -203,6 +233,8 @@ function ExportButton() {
   const startExport = async () => {
     if (!hasClips || isRunning) return;
     setPhase({ kind: 'running', fraction: 0 });
+    const controller = new AbortController();
+    exportController.current = controller;
 
     const pathByAsset = new Map(mediaItems.map((item) => [item.id, String(item.locator)]));
     const result = await exportTimeline(
@@ -210,7 +242,10 @@ function ExportButton() {
       (assetId: AssetId) => pathByAsset.get(assetId),
       aspectRatio,
       (fraction) => setPhase({ kind: 'running', fraction }),
+      controller.signal,
+      exportPresetId,
     );
+    if (exportController.current === controller) exportController.current = null;
 
     if (result.ok) {
       // Path or user-cancelled: either way there is nothing left to show.
@@ -219,6 +254,8 @@ function ExportButton() {
       setPhase({ kind: 'error', message: result.error.recovery });
     }
   };
+
+  const cancelExport = () => exportController.current?.abort();
 
   const shortcuts = useMemo<readonly Shortcut[]>(
     () => [
@@ -230,6 +267,14 @@ function ExportButton() {
         disabled: !hasClips || isRunning,
         run: () => void startExport(),
       },
+      {
+        id: 'project.export.cancel',
+        label: 'Cancel video export',
+        scope: 'project',
+        combo: { key: 'Escape' },
+        disabled: !isRunning,
+        run: cancelExport,
+      },
     ],
     // Only the disabled flag needs to re-register: the registry reads the
     // latest handler through a ref, so startExport's identity is irrelevant.
@@ -239,16 +284,29 @@ function ExportButton() {
 
   return (
     <div className="relative">
-      <Button
-        size="sm"
-        variant="primary"
-        leadingIcon={<Download />}
-        disabled={!hasClips || isRunning}
-        title={hasClips ? 'Export video (Ctrl+E)' : 'Add clips to the timeline to export.'}
-        onClick={() => void startExport()}
-      >
-        {isRunning ? `Exporting ${Math.round(phase.fraction * 100)}%` : 'Export'}
-      </Button>
+      <div className="flex items-center gap-1">
+        <Button
+          size="sm"
+          variant="primary"
+          leadingIcon={<Download />}
+          disabled={!hasClips || isRunning}
+          title={hasClips ? 'Export video (Ctrl+E)' : 'Add clips to the timeline to export.'}
+          onClick={() => void startExport()}
+        >
+          {isRunning ? `Exporting ${Math.round(phase.fraction * 100)}%` : 'Export'}
+        </Button>
+        {isRunning && (
+          <Button
+            size="sm"
+            variant="secondary"
+            leadingIcon={<X />}
+            title="Cancel export (Escape)"
+            onClick={cancelExport}
+          >
+            Cancel
+          </Button>
+        )}
+      </div>
       {isRunning && (
         <span
           role="progressbar"

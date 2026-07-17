@@ -1,4 +1,4 @@
-import type { AssetId, ClipId, Milliseconds, TrackId } from '@videodip/shared';
+import type { AssetId, ClipId, Milliseconds, Normalized, TrackId } from '@videodip/shared';
 
 /**
  * Open track classification metadata.
@@ -9,6 +9,43 @@ import type { AssetId, ClipId, Milliseconds, TrackId } from '@videodip/shared';
  * decide how a kind renders; timeline operations care only about track ids.
  */
 export type TrackKind = string;
+
+/** Blend modes supported consistently by preview and native export. */
+export type ClipBlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten';
+
+/** Canvas-relative visual transform; positions are fractions of the output frame. */
+export interface ClipTransform {
+  readonly positionX: number;
+  readonly positionY: number;
+  readonly scaleX: number;
+  readonly scaleY: number;
+  readonly rotation: number;
+}
+
+/** Flat JSON metadata available to plugins without owning core clip fields. */
+export type ClipMetadata = Readonly<Record<string, string | number | boolean | null>>;
+
+/** Static clip fields that can be animated over clip-relative time. */
+export type ClipAnimationProperty = keyof ClipTransform | 'opacity';
+
+/** Easing applied while approaching a keyframe from the previous keyframe. */
+export type ClipKeyframeEasing = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out';
+
+/** One serializable keyframe at a clip-relative offset. */
+export interface ClipKeyframe {
+  readonly property: ClipAnimationProperty;
+  readonly offset: Milliseconds;
+  readonly value: number;
+  readonly easing: ClipKeyframeEasing;
+}
+
+/** Per-clip audio mix settings shared by preview and native export. */
+export interface ClipAudioSettings {
+  readonly volume: Normalized;
+  readonly isMuted: boolean;
+  readonly fadeIn: Milliseconds;
+  readonly fadeOut: Milliseconds;
+}
 
 /**
  * A placed instance of a media asset on the timeline.
@@ -27,6 +64,14 @@ export interface Clip {
   readonly duration: Milliseconds;
   /** Offset into the source media where this clip begins. */
   readonly sourceStart: Milliseconds;
+  readonly transform: ClipTransform;
+  readonly opacity: Normalized;
+  readonly blendMode: ClipBlendMode;
+  /** Disabled clips remain on the timeline but do not preview or export. */
+  readonly isEnabled: boolean;
+  readonly metadata: ClipMetadata;
+  readonly animation: readonly ClipKeyframe[];
+  readonly audio: ClipAudioSettings;
 }
 
 /** A generic ordered clip container whose kind is consumer-defined metadata. */

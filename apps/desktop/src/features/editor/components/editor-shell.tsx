@@ -2,11 +2,16 @@
 
 import { ms } from '@videodip/shared';
 import { useMemo } from 'react';
-import { useShortcuts, type Shortcut } from '../../shortcuts/index';
+import { CommandPalette, useShortcuts, type Shortcut } from '../../shortcuts/index';
 import { useEditorStore } from '../editor.store';
 import { useProjectStore } from '../project.store';
+import { useSubtitleStore } from '../subtitle.store';
 import { LeftSidebar } from './left-sidebar';
 import { PreviewCanvas } from './preview-canvas';
+import {
+  ProjectArchiveControllerProvider,
+  useProjectArchiveController,
+} from './project-archive-controller';
 import { ProjectPersistenceController } from './project-persistence-controller';
 import { RightInspector } from './right-inspector';
 import { TimelinePanel } from './timeline-panel';
@@ -27,6 +32,15 @@ const NUDGE_LARGE = ms(1000);
  * registry dispatch — see `CLAUDE.md` on never using ad-hoc listeners.
  */
 export function EditorShell() {
+  return (
+    <ProjectArchiveControllerProvider>
+      <EditorShellContent />
+    </ProjectArchiveControllerProvider>
+  );
+}
+
+function EditorShellContent() {
+  const projectArchives = useProjectArchiveController();
   const togglePlayback = useEditorStore((s) => s.togglePlayback);
   const nudge = useEditorStore((s) => s.nudge);
   const seek = useEditorStore((s) => s.seek);
@@ -36,6 +50,9 @@ export function EditorShell() {
   const toggleSnap = useEditorStore((s) => s.toggleSnap);
   const toggleSidebar = useEditorStore((s) => s.toggleSidebar);
   const toggleInspector = useEditorStore((s) => s.toggleInspector);
+  const setActivePanel = useEditorStore((s) => s.setActivePanel);
+  const activePanel = useEditorStore((s) => s.activePanel);
+  const isSidebarCollapsed = useEditorStore((s) => s.sidebarCollapsed);
   const selectedClipId = useEditorStore((s) => s.selectedClipId);
   const selectClip = useEditorStore((s) => s.selectClip);
   const undo = useProjectStore((s) => s.undo);
@@ -43,37 +60,66 @@ export function EditorShell() {
   const removeClip = useProjectStore((s) => s.removeClip);
   const canUndo = useProjectStore((s) => s.past.length > 0);
   const canRedo = useProjectStore((s) => s.future.length > 0);
+  const selectedSubtitleId = useSubtitleStore((state) => state.selectedSegmentId);
+  const removeSubtitle = useSubtitleStore((state) => state.remove);
+  const subtitleCanUndo = useSubtitleStore((state) => state.past.length > 0);
+  const subtitleCanRedo = useSubtitleStore((state) => state.future.length > 0);
 
   // Memoised so the identity is stable: useShortcuts re-registers when the
   // list's shape changes, and a fresh array every render would thrash it.
   const shortcuts = useMemo<readonly Shortcut[]>(
     () => [
       {
+        id: 'project.importArchive',
+        label: 'Import VideoDip project',
+        scope: 'global',
+        combo: { key: 'o', mod: true, shift: true },
+        disabled: projectArchives.isBusy,
+        run: () => void projectArchives.importArchive(),
+      },
+      {
+        id: 'project.exportArchive',
+        label: 'Export portable VideoDip project',
+        scope: 'global',
+        combo: { key: 's', mod: true, shift: true },
+        disabled: projectArchives.isBusy,
+        run: () => void projectArchives.exportPortable(),
+      },
+      {
         id: 'edit.undo',
         label: 'Undo',
         scope: 'global',
         combo: { key: 'z', mod: true },
-        disabled: !canUndo,
-        run: undo,
+        disabled: !canUndo && !subtitleCanUndo,
+        run: () => {
+          if (selectedSubtitleId && subtitleCanUndo) useSubtitleStore.getState().undo();
+          else undo();
+        },
       },
       {
         id: 'edit.redo',
         label: 'Redo',
         scope: 'global',
         combo: { key: 'z', mod: true, shift: true },
-        disabled: !canRedo,
-        run: redo,
+        disabled: !canRedo && !subtitleCanRedo,
+        run: () => {
+          if (selectedSubtitleId && subtitleCanRedo) useSubtitleStore.getState().redo();
+          else redo();
+        },
       },
       {
         id: 'edit.deleteClip',
         label: 'Delete selected clip',
         scope: 'timeline',
         combo: { key: 'delete' },
-        disabled: selectedClipId === null,
+        disabled: selectedClipId === null && selectedSubtitleId === null,
         run: () => {
-          if (!selectedClipId) return;
-          removeClip(selectedClipId);
-          selectClip(null);
+          if (selectedClipId) {
+            removeClip(selectedClipId);
+            selectClip(null);
+          } else if (selectedSubtitleId) {
+            removeSubtitle(selectedSubtitleId);
+          }
         },
       },
       {
@@ -147,6 +193,16 @@ export function EditorShell() {
         run: toggleSnap,
       },
       {
+        id: 'ai.openSubtitles',
+        label: 'Open AI subtitles',
+        scope: 'global',
+        combo: { key: 'g', mod: true, shift: true },
+        run: () => {
+          setActivePanel('ai');
+          if (activePanel === 'ai' && isSidebarCollapsed) toggleSidebar();
+        },
+      },
+      {
         id: 'view.toggleSidebar',
         label: 'Toggle sidebar',
         scope: 'view',
@@ -171,6 +227,9 @@ export function EditorShell() {
       toggleSnap,
       toggleSidebar,
       toggleInspector,
+      setActivePanel,
+      activePanel,
+      isSidebarCollapsed,
       selectedClipId,
       selectClip,
       undo,
@@ -178,6 +237,11 @@ export function EditorShell() {
       removeClip,
       canUndo,
       canRedo,
+      selectedSubtitleId,
+      removeSubtitle,
+      subtitleCanUndo,
+      subtitleCanRedo,
+      projectArchives,
     ],
   );
 
@@ -186,6 +250,7 @@ export function EditorShell() {
   return (
     <div className="vd-app-shell bg-surface-base text-text-primary flex h-screen flex-col overflow-hidden">
       <ProjectPersistenceController />
+      <CommandPalette />
       <TopToolbar />
       <div className="flex min-h-0 flex-1">
         <LeftSidebar />

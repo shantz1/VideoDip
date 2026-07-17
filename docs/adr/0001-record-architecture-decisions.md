@@ -10,7 +10,7 @@ worked on by both humans and coding agents, often months apart. The expensive
 failure mode is not writing wrong code — it is re-litigating settled decisions,
 or silently violating one because nobody wrote down why it existed.
 
-`CLAUDE.md` captures the standing rules. It does not capture *why* those rules
+`CLAUDE.md` captures the standing rules. It does not capture _why_ those rules
 exist, and a rule without a rationale gets discarded by the first contributor it
 inconveniences.
 

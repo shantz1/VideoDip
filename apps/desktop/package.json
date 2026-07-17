@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "clean": "rimraf .next out .turbo",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:build:windows": "tauri build --config src-tauri/tauri.release.conf.json"
   },
   "dependencies": {
     "@remotion/player": "catalog:",
@@ -21,6 +22,8 @@
     "@videodip/media-engine": "workspace:*",
     "@videodip/renderer": "workspace:*",
     "@videodip/shared": "workspace:*",
+    "@videodip/subtitle-engine": "workspace:*",
+    "@videodip/template-engine": "workspace:*",
     "@videodip/timeline": "workspace:*",
     "@videodip/ui": "workspace:*",
     "framer-motion": "catalog:",
@@ -28,7 +31,8 @@
     "next": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "zustand": "catalog:"
+    "zustand": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "catalog:",

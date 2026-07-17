@@ -44,6 +44,67 @@ describe('projectSnapshotSchema', () => {
     expect(projectSnapshotSchema.safeParse(SNAPSHOT).success).toBe(true);
   });
 
+  it('adds backward-compatible visual defaults to older v1 clips', () => {
+    const result = projectSnapshotSchema.parse(SNAPSHOT);
+    expect(result.timeline.tracks[0]?.clips[0]).toMatchObject({
+      transform: { positionX: 0, positionY: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+      opacity: 1,
+      blendMode: 'normal',
+      isEnabled: true,
+      metadata: {},
+      animation: [],
+      audio: { volume: 1, isMuted: false, fadeIn: 0, fadeOut: 0 },
+    });
+    expect(result.subtitles).toMatchObject({ version: 1, language: null, segments: [] });
+  });
+
+  it('validates persisted subtitle timing and word boundaries', () => {
+    const parsed = projectSnapshotSchema.safeParse({
+      ...SNAPSHOT,
+      subtitles: {
+        version: 1,
+        language: 'en',
+        defaultStyle: {
+          fontFamily: null,
+          fontSize: null,
+          foreground: null,
+          background: null,
+          isBold: false,
+          isItalic: false,
+          isUnderlined: false,
+          alignment: 'center',
+          positionX: 0.5,
+          positionY: 0.88,
+        },
+        segments: [
+          {
+            id: 'caption-a',
+            start: 0,
+            end: 1000,
+            text: 'Hello',
+            style: {},
+            speaker: null,
+            words: [{ id: 'hello', text: 'Hello', start: 0, end: 1000, confidence: 0.9 }],
+          },
+        ],
+      },
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.subtitles.defaultStyle.animation).toBe('fade');
+  });
+
+  it('rejects unsafe clip transform and metadata values', () => {
+    const clip = {
+      ...SNAPSHOT.timeline.tracks[0].clips[0],
+      transform: { positionX: 0, positionY: 0, scaleX: 0, scaleY: 1, rotation: 0 },
+      metadata: { score: Number.POSITIVE_INFINITY },
+    };
+    const tracks = [{ ...SNAPSHOT.timeline.tracks[0], clips: [clip] }];
+    expect(projectSnapshotSchema.safeParse({ ...SNAPSHOT, timeline: { tracks } }).success).toBe(
+      false,
+    );
+  });
+
   it('rejects unknown versions and unknown fields', () => {
     expect(projectSnapshotSchema.safeParse({ ...SNAPSHOT, version: 2 }).success).toBe(false);
     expect(projectSnapshotSchema.safeParse({ ...SNAPSHOT, secret: true }).success).toBe(false);

@@ -1,6 +1,7 @@
 import {
   appError,
   err,
+  normalized,
   ok,
   type AssetId,
   type ClipId,
@@ -8,7 +9,42 @@ import {
   type Result,
   type TrackId,
 } from '@videodip/shared';
-import type { Clip, TimelineDocument, Track, TrackKind } from './document.types.js';
+import type {
+  Clip,
+  ClipAnimationProperty,
+  ClipAudioSettings,
+  ClipBlendMode,
+  ClipMetadata,
+  ClipKeyframe,
+  ClipTransform,
+  TimelineDocument,
+  Track,
+  TrackKind,
+} from './document.types.js';
+
+/** Identity transform assigned to newly placed clips. */
+export const DEFAULT_CLIP_TRANSFORM: ClipTransform = {
+  positionX: 0,
+  positionY: 0,
+  scaleX: 1,
+  scaleY: 1,
+  rotation: 0,
+};
+
+/** Visual defaults shared by project migration, preview and export adapters. */
+export const DEFAULT_CLIP_VISUALS = {
+  opacity: normalized(1),
+  blendMode: 'normal' as ClipBlendMode,
+  isEnabled: true,
+};
+
+/** Neutral audio mix assigned to new clips. */
+export const DEFAULT_CLIP_AUDIO: ClipAudioSettings = {
+  volume: normalized(1),
+  isMuted: false,
+  fadeIn: 0 as Milliseconds,
+  fadeOut: 0 as Milliseconds,
+};
 
 /** Creates a timeline from consumer-chosen tracks, preserving their order. */
 export function createTimeline(tracks: readonly Track[] = []): TimelineDocument {
@@ -173,6 +209,23 @@ export interface AddClipInput {
   readonly duration: Milliseconds;
   /** Offset into the source media. Defaults to the start of the source. */
   readonly sourceStart?: Milliseconds;
+  readonly transform?: Partial<ClipTransform>;
+  readonly opacity?: Clip['opacity'];
+  readonly blendMode?: ClipBlendMode;
+  readonly isEnabled?: boolean;
+  readonly metadata?: ClipMetadata;
+  readonly animation?: readonly ClipKeyframe[];
+  readonly audio?: Partial<ClipAudioSettings>;
+}
+
+/** Undoable patch for static clip visuals and plugin-safe metadata. */
+export interface UpdateClipPropertiesInput {
+  readonly transform?: Partial<ClipTransform>;
+  readonly opacity?: Clip['opacity'];
+  readonly blendMode?: ClipBlendMode;
+  readonly isEnabled?: boolean;
+  /** Metadata keys are merged; `null` is a value rather than deletion. */
+  readonly metadata?: ClipMetadata;
 }
 
 /**
@@ -225,7 +278,16 @@ export function addClip(document: TimelineDocument, input: AddClipInput): Result
     start: input.start,
     duration: input.duration,
     sourceStart,
+    transform: { ...DEFAULT_CLIP_TRANSFORM, ...input.transform },
+    opacity: input.opacity ?? DEFAULT_CLIP_VISUALS.opacity,
+    blendMode: input.blendMode ?? DEFAULT_CLIP_VISUALS.blendMode,
+    isEnabled: input.isEnabled ?? DEFAULT_CLIP_VISUALS.isEnabled,
+    metadata: { ...(input.metadata ?? {}) },
+    animation: sortKeyframes(input.animation ?? []),
+    audio: { ...DEFAULT_CLIP_AUDIO, ...input.audio },
   };
+  const visualError = validateClipProperties(clip);
+  if (visualError) return err(visualError);
 
   return ok(
     withTrackClips(
@@ -234,6 +296,224 @@ export function addClip(document: TimelineDocument, input: AddClipInput): Result
       [...track.clips, clip].sort((a, b) => a.start - b.start),
     ),
   );
+}
+
+/** Updates volume/mute/fades as one undoable audio-domain edit. */
+export function updateClipAudio(
+  document: TimelineDocument,
+  clipId: ClipId,
+  patch: Partial<ClipAudioSettings>,
+): Result<TimelineDocument> {
+  const found = findClip(document, clipId);
+  if (!found) {
+    return err(appError('NOT_FOUND', `No clip with id "${clipId}".`, 'Reload the project.'));
+  }
+  const track = document.tracks[found.trackIndex];
+  if (!track) {
+    return err(
+      appError('NOT_FOUND', 'Clip track disappeared mid-operation.', 'Reload the project.'),
+    );
+  }
+  const updated: Clip = { ...found.clip, audio: { ...found.clip.audio, ...patch } };
+  const visualError = validateClipProperties(updated);
+  if (visualError) return err(visualError);
+  return ok(
+    withTrackClips(
+      document,
+      track.id,
+      track.clips.map((clip) => (clip.id === clipId ? updated : clip)),
+    ),
+  );
+}
+
+/** Replaces a clip's keyframes after validating offsets, values and uniqueness. */
+export function setClipAnimation(
+  document: TimelineDocument,
+  clipId: ClipId,
+  animation: readonly ClipKeyframe[],
+): Result<TimelineDocument> {
+  const found = findClip(document, clipId);
+  if (!found) {
+    return err(appError('NOT_FOUND', `No clip with id "${clipId}".`, 'Reload the project.'));
+  }
+  const track = document.tracks[found.trackIndex];
+  if (!track) {
+    return err(
+      appError('NOT_FOUND', 'Clip track disappeared mid-operation.', 'Reload the project.'),
+    );
+  }
+  const updated: Clip = { ...found.clip, animation: sortKeyframes(animation) };
+  const visualError = validateClipProperties(updated);
+  if (visualError) return err(visualError);
+  return ok(
+    withTrackClips(
+      document,
+      track.id,
+      track.clips.map((clip) => (clip.id === clipId ? updated : clip)),
+    ),
+  );
+}
+
+/** Evaluates one animated property at a clip-relative offset. */
+export function evaluateClipProperty(
+  clip: Clip,
+  property: ClipAnimationProperty,
+  offset: Milliseconds,
+): number {
+  const keyframes = clip.animation.filter((keyframe) => keyframe.property === property);
+  if (keyframes.length === 0) return basePropertyValue(clip, property);
+  const first = keyframes[0];
+  const last = keyframes.at(-1);
+  if (!first || !last) return basePropertyValue(clip, property);
+  if (offset <= first.offset) return first.value;
+  if (offset >= last.offset) return last.value;
+  for (let index = 1; index < keyframes.length; index += 1) {
+    const right = keyframes[index];
+    const left = keyframes[index - 1];
+    if (!left || !right || offset > right.offset) continue;
+    const progress = (offset - left.offset) / (right.offset - left.offset);
+    return left.value + (right.value - left.value) * applyEasing(progress, right.easing);
+  }
+  return last.value;
+}
+
+/** Updates static visuals/metadata without changing clip timing or identity. */
+export function updateClipProperties(
+  document: TimelineDocument,
+  clipId: ClipId,
+  patch: UpdateClipPropertiesInput,
+): Result<TimelineDocument> {
+  const found = findClip(document, clipId);
+  if (!found) {
+    return err(appError('NOT_FOUND', `No clip with id "${clipId}".`, 'Reload the project.'));
+  }
+  const track = document.tracks[found.trackIndex];
+  if (!track) {
+    return err(
+      appError('NOT_FOUND', 'Clip track disappeared mid-operation.', 'Reload the project.'),
+    );
+  }
+  const updated: Clip = {
+    ...found.clip,
+    ...(patch.opacity === undefined ? {} : { opacity: patch.opacity }),
+    ...(patch.blendMode === undefined ? {} : { blendMode: patch.blendMode }),
+    ...(patch.isEnabled === undefined ? {} : { isEnabled: patch.isEnabled }),
+    transform: { ...found.clip.transform, ...patch.transform },
+    metadata: { ...found.clip.metadata, ...patch.metadata },
+  };
+  const visualError = validateClipProperties(updated);
+  if (visualError) return err(visualError);
+  return ok(
+    withTrackClips(
+      document,
+      track.id,
+      track.clips.map((clip) => (clip.id === clipId ? updated : clip)),
+    ),
+  );
+}
+
+function validateClipProperties(clip: Clip) {
+  const transformValues = Object.values(clip.transform);
+  if (
+    transformValues.some((value) => !Number.isFinite(value)) ||
+    clip.transform.scaleX <= 0 ||
+    clip.transform.scaleY <= 0 ||
+    clip.transform.scaleX > 100 ||
+    clip.transform.scaleY > 100 ||
+    Math.abs(clip.transform.positionX) > 10 ||
+    Math.abs(clip.transform.positionY) > 10 ||
+    Math.abs(clip.transform.rotation) > 36_000 ||
+    !Number.isFinite(clip.opacity) ||
+    clip.opacity < 0 ||
+    clip.opacity > 1
+  ) {
+    return appError(
+      'VALIDATION',
+      'Clip transform or opacity is outside the supported range.',
+      'Use finite positions, positive scales, and opacity between zero and one.',
+    );
+  }
+  if (!['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten'].includes(clip.blendMode)) {
+    return appError('VALIDATION', 'Clip blend mode is unsupported.', 'Choose a listed blend mode.');
+  }
+  const entries = Object.entries(clip.metadata);
+  if (
+    entries.length > 64 ||
+    entries.some(
+      ([key, value]) =>
+        !key.trim() || key.length > 128 || (typeof value === 'number' && !Number.isFinite(value)),
+    )
+  ) {
+    return appError(
+      'VALIDATION',
+      'Clip metadata is too large or contains an invalid key/value.',
+      'Use at most 64 short keys and finite primitive values.',
+    );
+  }
+  const keys = new Set<string>();
+  for (const keyframe of clip.animation) {
+    const key = `${keyframe.property}:${keyframe.offset}`;
+    if (
+      keys.has(key) ||
+      !Number.isFinite(keyframe.offset) ||
+      keyframe.offset < 0 ||
+      keyframe.offset > clip.duration ||
+      !isValidAnimatedValue(keyframe.property, keyframe.value) ||
+      !['linear', 'ease-in', 'ease-out', 'ease-in-out'].includes(keyframe.easing)
+    ) {
+      return appError(
+        'VALIDATION',
+        'Clip animation contains an invalid or duplicate keyframe.',
+        'Keep keyframes inside the clip with valid property values and unique offsets.',
+      );
+    }
+    keys.add(key);
+  }
+  if (
+    !Number.isFinite(clip.audio.volume) ||
+    clip.audio.volume < 0 ||
+    clip.audio.volume > 1 ||
+    !Number.isFinite(clip.audio.fadeIn) ||
+    !Number.isFinite(clip.audio.fadeOut) ||
+    clip.audio.fadeIn < 0 ||
+    clip.audio.fadeOut < 0 ||
+    clip.audio.fadeIn > clip.duration ||
+    clip.audio.fadeOut > clip.duration
+  ) {
+    return appError(
+      'VALIDATION',
+      'Clip audio volume or fades are outside the supported range.',
+      'Use volume from zero to one and keep fades within the clip duration.',
+    );
+  }
+  return undefined;
+}
+
+function sortKeyframes(keyframes: readonly ClipKeyframe[]): readonly ClipKeyframe[] {
+  return [...keyframes].sort(
+    (left, right) => left.property.localeCompare(right.property) || left.offset - right.offset,
+  );
+}
+
+function basePropertyValue(clip: Clip, property: ClipAnimationProperty): number {
+  return property === 'opacity' ? clip.opacity : clip.transform[property];
+}
+
+function isValidAnimatedValue(property: ClipAnimationProperty, value: number): boolean {
+  if (!Number.isFinite(value)) return false;
+  if (property === 'opacity') return value >= 0 && value <= 1;
+  if (property === 'scaleX' || property === 'scaleY') return value > 0 && value <= 100;
+  if (property === 'positionX' || property === 'positionY') return Math.abs(value) <= 10;
+  return Math.abs(value) <= 36_000;
+}
+
+function applyEasing(progress: number, easing: ClipKeyframe['easing']): number {
+  if (easing === 'ease-in') return progress * progress;
+  if (easing === 'ease-out') return 1 - (1 - progress) * (1 - progress);
+  if (easing === 'ease-in-out') {
+    return progress < 0.5 ? 2 * progress * progress : 1 - (-2 * progress + 2) ** 2 / 2;
+  }
+  return progress;
 }
 
 /**
@@ -425,6 +705,18 @@ export function trimClip(
       start: newTime,
       duration: newDuration as Milliseconds,
       sourceStart: (clip.sourceStart + sourceDelta) as Milliseconds,
+      animation:
+        sourceDelta >= 0
+          ? sliceClipAnimation(clip, sourceDelta as Milliseconds, clip.duration)
+          : clip.animation.map((keyframe) => ({
+              ...keyframe,
+              offset: (keyframe.offset - sourceDelta) as Milliseconds,
+            })),
+      audio: {
+        ...clip.audio,
+        fadeIn: Math.min(clip.audio.fadeIn, newDuration) as Milliseconds,
+        fadeOut: Math.min(clip.audio.fadeOut, newDuration) as Milliseconds,
+      },
     };
   } else {
     const newDuration = newTime - clip.start;
@@ -437,7 +729,19 @@ export function trimClip(
         ),
       );
     }
-    trimmed = { ...clip, duration: newDuration as Milliseconds };
+    trimmed = {
+      ...clip,
+      duration: newDuration as Milliseconds,
+      animation:
+        newDuration < clip.duration
+          ? sliceClipAnimation(clip, 0 as Milliseconds, newDuration as Milliseconds)
+          : clip.animation,
+      audio: {
+        ...clip.audio,
+        fadeIn: Math.min(clip.audio.fadeIn, newDuration) as Milliseconds,
+        fadeOut: Math.min(clip.audio.fadeOut, newDuration) as Milliseconds,
+      },
+    };
   }
 
   const siblings = track.clips.filter((c) => c.id !== clipId);
@@ -503,14 +807,29 @@ export function splitClip(
     );
   }
 
-  const left: Clip = { ...clip, duration: (atTime - clip.start) as Milliseconds };
+  const splitOffset = (atTime - clip.start) as Milliseconds;
+  const left: Clip = {
+    ...clip,
+    duration: splitOffset,
+    animation: sliceClipAnimation(clip, 0 as Milliseconds, splitOffset),
+    audio: {
+      ...clip.audio,
+      fadeIn: Math.min(clip.audio.fadeIn, splitOffset) as Milliseconds,
+      fadeOut: 0 as Milliseconds,
+    },
+  };
   const right: Clip = {
+    ...clip,
     id: crypto.randomUUID() as ClipId,
-    trackId: clip.trackId,
-    assetId: clip.assetId,
     start: atTime,
     duration: (clipEnd - atTime) as Milliseconds,
     sourceStart: (clip.sourceStart + (atTime - clip.start)) as Milliseconds,
+    animation: sliceClipAnimation(clip, splitOffset, clip.duration),
+    audio: {
+      ...clip.audio,
+      fadeIn: 0 as Milliseconds,
+      fadeOut: Math.min(clip.audio.fadeOut, clip.duration - splitOffset) as Milliseconds,
+    },
   };
 
   const rest = track.clips.filter((c) => c.id !== clipId);
@@ -521,4 +840,40 @@ export function splitClip(
       [...rest, left, right].sort((a, b) => a.start - b.start),
     ),
   );
+}
+
+function sliceClipAnimation(
+  clip: Clip,
+  from: Milliseconds,
+  to: Milliseconds,
+): readonly ClipKeyframe[] {
+  const properties = new Set(clip.animation.map((keyframe) => keyframe.property));
+  const sliced: ClipKeyframe[] = [];
+  for (const property of properties) {
+    const inner = clip.animation
+      .filter(
+        (keyframe) =>
+          keyframe.property === property && keyframe.offset > from && keyframe.offset < to,
+      )
+      .map((keyframe) => ({
+        ...keyframe,
+        offset: (keyframe.offset - from) as Milliseconds,
+      }));
+    sliced.push(
+      {
+        property,
+        offset: 0 as Milliseconds,
+        value: evaluateClipProperty(clip, property, from),
+        easing: 'linear',
+      },
+      ...inner,
+      {
+        property,
+        offset: (to - from) as Milliseconds,
+        value: evaluateClipProperty(clip, property, to),
+        easing: inner.at(-1)?.easing ?? 'linear',
+      },
+    );
+  }
+  return sortKeyframes(sliced);
 }

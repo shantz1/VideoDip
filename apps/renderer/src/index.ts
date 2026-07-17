@@ -9,10 +9,12 @@
 export {
   compositionClipSchema,
   compositionSettingsSchema,
+  compositionSubtitleSchema,
   getCompositionMetadata,
   videoDipCompositionSchema,
   VideoDipComposition,
   type CompositionClip,
   type CompositionSettings,
+  type CompositionSubtitle,
   type VideoDipCompositionProps,
 } from './composition.js';

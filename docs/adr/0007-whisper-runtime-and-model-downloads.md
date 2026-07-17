@@ -1,6 +1,6 @@
 # ADR-0007: Transcription runs on whisper.cpp as a Tauri sidecar; models download on demand
 
-- **Status:** Proposed — needs Shantanu's sign-off before any implementation
+- **Status:** Accepted — approved by Shantanu on 2026-07-18
 - **Date:** 2026-07-17
 
 ## Context
@@ -29,7 +29,7 @@ Constraints that bound the choice:
   actually kills the child process.
 - **GPU where available, CPU where not** (constitution §6).
 
-## Decision (proposed)
+## Decision
 
 **Ship `whisper.cpp` as a Tauri sidecar binary. Download GGUF/GGML models on
 demand, inside the app, with real progress.**

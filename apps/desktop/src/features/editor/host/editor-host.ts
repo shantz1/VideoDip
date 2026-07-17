@@ -1,13 +1,23 @@
 'use client';
 
-import type { MediaItem } from '@videodip/media-engine';
 import type {
+  ExportPresetId,
+  MediaArtifact,
+  MediaArtifactRequest,
+  MediaArtifactRunOptions,
+  MediaItem,
+} from '@videodip/media-engine';
+import type {
+  AppError,
   AssetId,
   MediaLocator,
+  ProjectArchivePort,
   ProjectRepository,
   ProjectSnapshot,
   ProjectSummary,
   Result,
+  TranscriptionProvider,
+  TranscriptionModelManager,
 } from '@videodip/shared';
 import type { TimelineDocument } from '@videodip/timeline';
 import { createContext, createElement, useContext, type ReactNode } from 'react';
@@ -16,6 +26,10 @@ import type { AspectRatio } from '../editor.store';
 export interface MediaHostCapability {
   readonly importMedia: () => Promise<Result<readonly MediaItem[]>>;
   readonly resolveMediaSource: (locator: MediaLocator) => string;
+  readonly getMediaArtifact: (
+    request: MediaArtifactRequest,
+    options?: MediaArtifactRunOptions,
+  ) => Promise<Result<MediaArtifact, AppError>>;
 }
 
 export interface ExportHostCapability {
@@ -24,6 +38,8 @@ export interface ExportHostCapability {
     resolveLocator: (assetId: AssetId) => string | undefined,
     aspectRatio: AspectRatio,
     onProgress: (fraction: number) => void,
+    signal?: AbortSignal,
+    presetId?: ExportPresetId,
   ) => Promise<Result<string | null>>;
 }
 
@@ -33,11 +49,22 @@ export interface WindowHostCapability {
 
 export interface ProjectHostCapability {
   readonly projects: ProjectRepository<ProjectSnapshot, ProjectSummary>;
+  readonly projectArchives: ProjectArchivePort<ProjectSnapshot>;
+}
+
+export interface AiHostCapability {
+  readonly transcription: TranscriptionProvider;
+  readonly transcriptionModels: TranscriptionModelManager;
 }
 
 /** Host capabilities consumed by the reusable editor UI. */
 export interface EditorHost
-  extends MediaHostCapability, ExportHostCapability, WindowHostCapability, ProjectHostCapability {}
+  extends
+    MediaHostCapability,
+    ExportHostCapability,
+    WindowHostCapability,
+    ProjectHostCapability,
+    AiHostCapability {}
 
 const EditorHostContext = createContext<EditorHost | null>(null);
 

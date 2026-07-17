@@ -63,7 +63,17 @@ export function buildExportArgs(
         !Number.isFinite(clip.sourceStart) ||
         clip.sourceStart < 0 ||
         !Number.isFinite(clip.duration) ||
-        clip.duration <= 0,
+        clip.duration <= 0 ||
+        !Number.isFinite(clip.opacity) ||
+        clip.opacity < 0 ||
+        clip.opacity > 1 ||
+        !Number.isFinite(clip.audio.volume) ||
+        clip.audio.volume < 0 ||
+        clip.audio.volume > 1 ||
+        clip.audio.fadeIn < 0 ||
+        clip.audio.fadeOut < 0 ||
+        clip.audio.fadeIn > clip.duration ||
+        clip.audio.fadeOut > clip.duration,
     )
   ) {
     return err(
@@ -71,6 +81,15 @@ export function buildExportArgs(
         'VALIDATION',
         'A clip has an invalid source, offset, or duration.',
         'Remove or re-trim the broken clip, then export again.',
+      ),
+    );
+  }
+  if (clips.some((clip) => clip.animation.length > 0 || clip.blendMode !== 'normal')) {
+    return err(
+      appError(
+        'UNSUPPORTED',
+        'The native FFmpeg path cannot yet reproduce animation or non-normal blend modes.',
+        'Clear clip animation and use Normal blend mode, or export through the headless renderer when available.',
       ),
     );
   }
@@ -102,19 +121,39 @@ export function buildExportArgs(
       ),
     );
   }
+  const crf = settings.crf ?? 18;
+  if (!Number.isInteger(crf) || crf < 0 || crf > 51) {
+    return err(
+      appError('VALIDATION', 'Export quality is out of range.', 'Choose CRF 0 through 51.'),
+    );
+  }
 
   const inputs = clips.flatMap((clip) => ['-i', clip.src]);
 
   const segments = clips.map((clip, i) => {
     const start = seconds(clip.sourceStart);
     const end = seconds((clip.sourceStart + clip.duration) as Milliseconds);
+    const angle = (clip.transform.rotation * Math.PI) / 180;
+    const x = `(W-w)/2+${clip.transform.positionX}*W`;
+    const y = `(H-h)/2+${clip.transform.positionY}*H`;
     const video =
+      `color=c=black:s=${width}x${height}:r=${fps}:d=${seconds(clip.duration)}[base${i}];` +
       `[${i}:v]trim=start=${start}:end=${end},setpts=PTS-STARTPTS,` +
       `scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
-      `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps}[v${i}]`;
+      `scale=w='max(2,trunc(iw*${clip.transform.scaleX}/2)*2)':` +
+      `h='max(2,trunc(ih*${clip.transform.scaleY}/2)*2)',` +
+      `rotate=${angle}:ow=rotw(iw):oh=roth(ih):c=none,format=rgba,` +
+      `colorchannelmixer=aa=${clip.opacity}[fg${i}];` +
+      `[base${i}][fg${i}]overlay=x='${x}':y='${y}':shortest=1,setsar=1,fps=${fps}[v${i}]`;
+    const volume = clip.audio.isMuted ? 0 : clip.audio.volume;
+    const fadeIn = clip.audio.fadeIn > 0 ? `,afade=t=in:st=0:d=${seconds(clip.audio.fadeIn)}` : '';
+    const fadeOut =
+      clip.audio.fadeOut > 0
+        ? `,afade=t=out:st=${seconds((clip.duration - clip.audio.fadeOut) as Milliseconds)}:d=${seconds(clip.audio.fadeOut)}`
+        : '';
     const audio =
       `[${i}:a]atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS,` +
-      `aresample=${AUDIO_SAMPLE_RATE}[a${i}]`;
+      `aresample=${AUDIO_SAMPLE_RATE},volume=${volume}${fadeIn}${fadeOut}[a${i}]`;
     return `${video};${audio}`;
   });
 
@@ -138,15 +177,15 @@ export function buildExportArgs(
     '-c:v',
     'libx264',
     '-preset',
-    'veryfast',
+    settings.encoderPreset ?? 'veryfast',
     '-crf',
-    '18',
+    String(crf),
     '-pix_fmt',
     'yuv420p',
     '-c:a',
     'aac',
     '-b:a',
-    '192k',
+    settings.audioBitrate ?? '192k',
     '-movflags',
     '+faststart',
     '-y',

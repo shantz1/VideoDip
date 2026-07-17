@@ -1,4 +1,4 @@
-import { ms, type AssetId } from '@videodip/shared';
+import { ms, normalized, type AssetId } from '@videodip/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useEditorStore } from './editor.store';
 import { useProjectStore } from './project.store';
@@ -96,6 +96,59 @@ describe('moveClip / trimClip / splitClip', () => {
     const result = state().splitClip(clipId, ms(500));
     expect(result.ok).toBe(true);
     expect(videoClips()).toHaveLength(2);
+  });
+});
+
+describe('updateClipProperties', () => {
+  it('applies visual edits through undo/redo history', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    const clipId = videoClips()![0]!.id;
+
+    const result = state().updateClipProperties(clipId, {
+      transform: { rotation: 20 },
+      opacity: normalized(0.75),
+    });
+    expect(result.ok).toBe(true);
+    expect(videoClips()?.[0]).toMatchObject({
+      transform: { rotation: 20 },
+      opacity: 0.75,
+    });
+
+    state().undo();
+    expect(videoClips()?.[0]).toMatchObject({
+      transform: { rotation: 0 },
+      opacity: 1,
+    });
+  });
+});
+
+describe('setClipAnimation', () => {
+  it('stores keyframes as an undoable document edit', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    const clipId = videoClips()![0]!.id;
+
+    const result = state().setClipAnimation(clipId, [
+      { property: 'opacity', offset: ms(0), value: 0, easing: 'linear' },
+      { property: 'opacity', offset: ms(500), value: 1, easing: 'ease-out' },
+    ]);
+    expect(result.ok).toBe(true);
+    expect(videoClips()?.[0]?.animation).toHaveLength(2);
+
+    state().undo();
+    expect(videoClips()?.[0]?.animation).toEqual([]);
+  });
+});
+
+describe('updateClipAudio', () => {
+  it('stores audio mix changes as undoable edits', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    const clipId = videoClips()![0]!.id;
+    expect(state().updateClipAudio(clipId, { volume: normalized(0.5), fadeIn: ms(200) }).ok).toBe(
+      true,
+    );
+    expect(videoClips()?.[0]?.audio).toMatchObject({ volume: 0.5, fadeIn: 200 });
+    state().undo();
+    expect(videoClips()?.[0]?.audio).toMatchObject({ volume: 1, fadeIn: 0 });
   });
 });
 

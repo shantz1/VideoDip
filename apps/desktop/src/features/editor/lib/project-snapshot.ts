@@ -10,6 +10,7 @@ import {
 } from '@videodip/shared';
 import type { MediaItem } from '@videodip/media-engine';
 import type { TimelineDocument } from '@videodip/timeline';
+import type { SubtitleDocument } from '@videodip/subtitle-engine';
 import type { AspectRatio } from '../editor.store';
 
 export interface ProjectSnapshotSource {
@@ -18,6 +19,7 @@ export interface ProjectSnapshotSource {
   readonly aspectRatio: AspectRatio;
   readonly timeline: TimelineDocument;
   readonly mediaItems: readonly MediaItem[];
+  readonly subtitles?: SubtitleDocument;
   readonly createdAt: string;
   readonly updatedAt: string;
 }

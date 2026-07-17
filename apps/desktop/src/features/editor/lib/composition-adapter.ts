@@ -1,6 +1,8 @@
-import { fps, msToFrames, type AssetId, type Fps, type MediaKind } from '@videodip/shared';
+import { fps, ms, msToFrames, type AssetId, type Fps, type MediaKind } from '@videodip/shared';
 import type { TimelineDocument } from '@videodip/timeline';
 import type { CompositionClip } from '@videodip/renderer';
+import type { SubtitleDocument } from '@videodip/subtitle-engine';
+import type { CompositionSubtitle } from '@videodip/renderer';
 
 /**
  * PLACEHOLDER project frame rate.
@@ -52,9 +54,45 @@ export function toCompositionClips(
         startFrame: msToFrames(clip.start, frameRate),
         durationInFrames: Math.max(1, msToFrames(clip.duration, frameRate)),
         sourceStartFrame: msToFrames(clip.sourceStart, frameRate),
+        transform: clip.transform,
+        opacity: clip.opacity,
+        blendMode: clip.blendMode,
+        isEnabled: clip.isEnabled,
+        animation: clip.animation.map((keyframe) => ({
+          property: keyframe.property,
+          frame: msToFrames(keyframe.offset, frameRate),
+          value: keyframe.value,
+          easing: keyframe.easing,
+        })),
+        audio: {
+          volume: clip.audio.volume,
+          isMuted: clip.audio.isMuted,
+          fadeInFrames: msToFrames(clip.audio.fadeIn, frameRate),
+          fadeOutFrames: msToFrames(clip.audio.fadeOut, frameRate),
+        },
       });
     }
   }
 
   return clips;
+}
+
+/** Resolves editable millisecond subtitle cues into the shared frame contract. */
+export function toCompositionSubtitles(
+  document: SubtitleDocument,
+  frameRate: Fps = PROJECT_FPS,
+): readonly CompositionSubtitle[] {
+  return document.segments.map((segment) => ({
+    id: segment.id,
+    startFrame: msToFrames(segment.start, frameRate),
+    durationInFrames: Math.max(1, msToFrames(ms(segment.end - segment.start), frameRate)),
+    text: segment.text,
+    words: segment.words.map((word) => ({
+      id: word.id,
+      text: word.text,
+      startFrame: Math.max(0, msToFrames(ms(word.start - segment.start), frameRate)),
+      endFrame: Math.max(1, msToFrames(ms(word.end - segment.start), frameRate)),
+    })),
+    style: { ...document.defaultStyle, ...segment.style },
+  }));
 }

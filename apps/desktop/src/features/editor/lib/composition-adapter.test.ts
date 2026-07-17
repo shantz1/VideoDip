@@ -1,7 +1,8 @@
 import { ms, type AssetId, type TrackId } from '@videodip/shared';
 import { addClip, createTimeline, createTrack } from '@videodip/timeline';
 import { describe, expect, it } from 'vitest';
-import { toCompositionClips } from './composition-adapter';
+import { addSubtitleSegment, createSubtitleDocument } from '@videodip/subtitle-engine';
+import { toCompositionClips, toCompositionSubtitles } from './composition-adapter';
 
 const ASSET = 'asset-a' as AssetId;
 const VIDEO = 'video' as TrackId;
@@ -43,6 +44,12 @@ describe('toCompositionClips', () => {
       startFrame: 30,
       durationInFrames: 60,
       sourceStartFrame: 15,
+      transform: { positionX: 0, positionY: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+      opacity: 1,
+      blendMode: 'normal',
+      isEnabled: true,
+      animation: [],
+      audio: { volume: 1, isMuted: false, fadeInFrames: 0, fadeOutFrames: 0 },
     });
   });
 
@@ -112,5 +119,30 @@ describe('toCompositionClips', () => {
 
     expect(clips.map((clip) => clip.trackKind)).toEqual(['video', 'plugin:overlay']);
     expect(clips.map((clip) => clip.mediaKind)).toEqual(['video', 'video']);
+  });
+});
+
+describe('toCompositionSubtitles', () => {
+  it('converts absolute cue and word timings to clip-relative frames', () => {
+    const added = addSubtitleSegment(createSubtitleDocument('en'), {
+      start: ms(1000),
+      end: ms(3000),
+      text: 'Hello world',
+      words: [
+        { id: 'hello', text: 'Hello', start: ms(1000), end: ms(1800), confidence: null },
+        { id: 'world', text: 'world', start: ms(1900), end: ms(3000), confidence: null },
+      ],
+      style: { isBold: true },
+    });
+    if (!added.ok) throw new Error(added.error.message);
+    expect(toCompositionSubtitles(added.value)[0]).toMatchObject({
+      startFrame: 30,
+      durationInFrames: 60,
+      words: [
+        { text: 'Hello', startFrame: 0, endFrame: 24 },
+        { text: 'world', startFrame: 27, endFrame: 60 },
+      ],
+      style: { isBold: true, positionX: 0.5, positionY: 0.88 },
+    });
   });
 });

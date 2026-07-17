@@ -1,18 +1,22 @@
-import { ms, type AssetId } from '@videodip/shared';
+import { ms, normalized, type AssetId } from '@videodip/shared';
 import { describe, expect, it } from 'vitest';
 import {
   addClip,
   addTrack,
   createTimeline,
   createTrack,
+  evaluateClipProperty,
   findFreeStart,
   getDuration,
   moveClip,
   removeClip,
   removeTrack,
   reorderTrack,
+  setClipAnimation,
   splitClip,
   trimClip,
+  updateClipProperties,
+  updateClipAudio,
 } from './document.service.js';
 import type { TrackId } from '@videodip/shared';
 
@@ -137,6 +141,40 @@ describe('addClip', () => {
     expect(doc.tracks[0]?.clips[0]?.sourceStart).toBe(0);
   });
 
+  it('creates clips with identity visuals and isolated metadata', () => {
+    const metadata = { source: 'import' };
+    const doc = unwrap(
+      addClip(createEmptyTimeline(), {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+        metadata,
+      }),
+    );
+    metadata.source = 'mutated';
+
+    expect(doc.tracks[0]?.clips[0]).toMatchObject({
+      transform: { positionX: 0, positionY: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+      opacity: 1,
+      blendMode: 'normal',
+      isEnabled: true,
+      metadata: { source: 'import' },
+    });
+  });
+
+  it('rejects invalid initial clip visuals', () => {
+    const result = addClip(createEmptyTimeline(), {
+      trackId: VIDEO,
+      assetId: ASSET_A,
+      start: ms(0),
+      duration: ms(1000),
+      transform: { scaleX: 0 },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('VALIDATION');
+  });
+
   it('rejects an unknown track', () => {
     const result = addClip(createEmptyTimeline(), {
       trackId: 'nope' as TrackId,
@@ -207,6 +245,175 @@ describe('addClip', () => {
     );
 
     expect(doc.tracks[0]?.clips.map((c) => c.start)).toEqual([0, 5000]);
+  });
+});
+
+describe('updateClipProperties', () => {
+  it('updates visuals and metadata immutably', () => {
+    const original = unwrap(
+      addClip(createEmptyTimeline(), {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+        metadata: { origin: 'camera' },
+      }),
+    );
+    const clipId = original.tracks[0]?.clips[0]?.id;
+    if (!clipId) throw new Error('Expected a clip.');
+
+    const updated = unwrap(
+      updateClipProperties(original, clipId, {
+        transform: { positionX: 0.25, rotation: 15 },
+        opacity: normalized(0.5),
+        blendMode: 'screen',
+        metadata: { reviewed: true },
+      }),
+    );
+
+    expect(original.tracks[0]?.clips[0]?.transform.positionX).toBe(0);
+    expect(updated.tracks[0]?.clips[0]).toMatchObject({
+      transform: { positionX: 0.25, positionY: 0, scaleX: 1, scaleY: 1, rotation: 15 },
+      opacity: 0.5,
+      blendMode: 'screen',
+      metadata: { origin: 'camera', reviewed: true },
+    });
+  });
+
+  it('rejects invalid patches without changing the document', () => {
+    const document = unwrap(
+      addClip(createEmptyTimeline(), {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+      }),
+    );
+    const clipId = document.tracks[0]?.clips[0]?.id;
+    if (!clipId) throw new Error('Expected a clip.');
+    const result = updateClipProperties(document, clipId, {
+      transform: { scaleY: Number.NaN },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(document.tracks[0]?.clips[0]?.transform.scaleY).toBe(1);
+  });
+});
+
+describe('clip animation', () => {
+  it('validates, sorts and evaluates clip-relative keyframes', () => {
+    const document = unwrap(
+      addClip(createEmptyTimeline(), {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+      }),
+    );
+    const clipId = document.tracks[0]?.clips[0]?.id;
+    if (!clipId) throw new Error('Expected a clip.');
+    const animated = unwrap(
+      setClipAnimation(document, clipId, [
+        { property: 'opacity', offset: ms(1000), value: 1, easing: 'ease-in' },
+        { property: 'opacity', offset: ms(0), value: 0, easing: 'linear' },
+      ]),
+    );
+    const clip = animated.tracks[0]?.clips[0];
+    if (!clip) throw new Error('Expected an animated clip.');
+
+    expect(clip.animation.map((keyframe) => keyframe.offset)).toEqual([0, 1000]);
+    expect(evaluateClipProperty(clip, 'opacity', ms(500))).toBeCloseTo(0.25);
+  });
+
+  it('rejects duplicate and out-of-range keyframes', () => {
+    const document = unwrap(
+      addClip(createEmptyTimeline(), {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+      }),
+    );
+    const clipId = document.tracks[0]?.clips[0]?.id;
+    if (!clipId) throw new Error('Expected a clip.');
+    const result = setClipAnimation(document, clipId, [
+      { property: 'rotation', offset: ms(1500), value: 10, easing: 'linear' },
+      { property: 'rotation', offset: ms(1500), value: 20, easing: 'linear' },
+    ]);
+    expect(result.ok).toBe(false);
+  });
+
+  it('preserves animation continuity when splitting a clip', () => {
+    let document = unwrap(
+      addClip(createEmptyTimeline(), {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+      }),
+    );
+    const clipId = document.tracks[0]?.clips[0]?.id;
+    if (!clipId) throw new Error('Expected a clip.');
+    document = unwrap(
+      setClipAnimation(document, clipId, [
+        { property: 'positionX', offset: ms(0), value: 0, easing: 'linear' },
+        { property: 'positionX', offset: ms(1000), value: 1, easing: 'linear' },
+      ]),
+    );
+
+    const split = unwrap(splitClip(document, clipId, ms(400)));
+    const [left, right] = split.tracks[0]?.clips ?? [];
+    if (!left || !right) throw new Error('Expected two clips.');
+    expect(evaluateClipProperty(left, 'positionX', left.duration)).toBeCloseTo(0.4);
+    expect(evaluateClipProperty(right, 'positionX', ms(0))).toBeCloseTo(0.4);
+    expect(right.animation.at(-1)?.offset).toBe(600);
+  });
+});
+
+describe('clip audio', () => {
+  it('updates volume and fades with domain validation', () => {
+    const document = unwrap(
+      addClip(createEmptyTimeline(), {
+        trackId: AUDIO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+      }),
+    );
+    const clipId = document.tracks.find((track) => track.id === AUDIO)?.clips[0]?.id;
+    if (!clipId) throw new Error('Expected an audio clip.');
+    const updated = unwrap(
+      updateClipAudio(document, clipId, {
+        volume: normalized(0.4),
+        fadeIn: ms(250),
+        fadeOut: ms(500),
+      }),
+    );
+    expect(updated.tracks.find((track) => track.id === AUDIO)?.clips[0]?.audio).toEqual({
+      volume: 0.4,
+      isMuted: false,
+      fadeIn: 250,
+      fadeOut: 500,
+    });
+    expect(updateClipAudio(document, clipId, { fadeIn: ms(1500) }).ok).toBe(false);
+  });
+
+  it('keeps split fades inside both new clip durations', () => {
+    let document = unwrap(
+      addClip(createEmptyTimeline(), {
+        trackId: AUDIO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+        audio: { fadeIn: ms(700), fadeOut: ms(700) },
+      }),
+    );
+    const clipId = document.tracks.find((track) => track.id === AUDIO)?.clips[0]?.id;
+    if (!clipId) throw new Error('Expected an audio clip.');
+    document = unwrap(splitClip(document, clipId, ms(400)));
+    const clips = document.tracks.find((track) => track.id === AUDIO)?.clips ?? [];
+    expect(clips[0]?.audio).toMatchObject({ fadeIn: 400, fadeOut: 0 });
+    expect(clips[1]?.audio).toMatchObject({ fadeIn: 0, fadeOut: 600 });
   });
 });
 

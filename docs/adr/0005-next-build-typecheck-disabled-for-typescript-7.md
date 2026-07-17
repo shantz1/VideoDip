@@ -26,7 +26,7 @@ Traced to root cause in `next/dist/esm/lib/has-necessary-dependencies.js` and
    again. This step is pure waste — a `pnpm add` that changes nothing — but it
    is not the crash.
 3. Next's dependency resolver only records a resolution for the `typescript`
-   key when the sentinel-file check *succeeds*. It never does here, so when the
+   key when the sentinel-file check _succeeds_. It never does here, so when the
    build later runs `require(deps.resolved.get('typescript'))` to load the
    compiler for its internal type-check pass, `get('typescript')` returns
    `undefined` and `require(undefined)` throws exactly the error above.
@@ -65,8 +65,8 @@ the sentinel-file lookup is unconditional and cannot be worked around from
 
 - The desktop build completes instead of crashing.
 - No duplicate type-checking work: `tsc --noEmit` runs once, in `turbo
-  typecheck`, instead of once there and once (uselessly) again inside `next
-  build`.
+typecheck`, instead of once there and once (uselessly) again inside `next
+build`.
 - ADR-0003's TypeScript 7 adoption stands as originally decided; this ADR adds
   a consequence, it does not supersede it.
 

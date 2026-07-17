@@ -162,6 +162,8 @@ whisper-models/
 # FFmpeg and Whisper binaries are fetched per-platform at build time.
 bin/
 vendor/
+apps/desktop/src-tauri/binaries/*
+!apps/desktop/src-tauri/binaries/README.md
 ffmpeg.exe
 ffprobe.exe
 *.dll

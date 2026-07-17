@@ -35,7 +35,10 @@ const buttonVariants = cva(
           'bg-surface-inset text-text-primary border-border-default',
           'hover:bg-surface-overlay hover:border-border-strong',
         ],
-        ghost: ['bg-transparent text-text-secondary', 'hover:bg-surface-hover hover:text-text-primary'],
+        ghost: [
+          'bg-transparent text-text-secondary',
+          'hover:bg-surface-hover hover:text-text-primary',
+        ],
         outline: [
           'bg-transparent text-text-primary border-border-default',
           'hover:bg-surface-hover hover:border-border-strong',
@@ -61,7 +64,8 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'>,
+  extends
+    Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'>,
     VariantProps<typeof buttonVariants> {
   /**
    * Shows a spinner and blocks interaction.

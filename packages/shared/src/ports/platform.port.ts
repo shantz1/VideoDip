@@ -55,6 +55,34 @@ export interface ProjectRepository<TProject, TSummary> {
   delete(id: ProjectId, signal?: AbortSignal): Promise<Result<void>>;
 }
 
+/** Controls whether a portable project includes source media bytes. */
+export interface ProjectArchiveExportOptions {
+  /** `true` creates a self-contained archive; `false` preserves linked locators. */
+  readonly includeMedia: boolean;
+}
+
+/** Location and packaging mode of a completed project archive export. */
+export interface ProjectArchiveReceipt {
+  readonly outputName: string;
+  readonly locator: MediaLocator;
+  readonly includesMedia: boolean;
+}
+
+/**
+ * User-driven portable project import/export supplied by the active host.
+ *
+ * Cancellation is a successful `null`; malformed archives and unavailable
+ * host capabilities are typed failures.
+ */
+export interface ProjectArchivePort<TProject> {
+  exportArchive(
+    project: TProject,
+    options: ProjectArchiveExportOptions,
+    signal?: AbortSignal,
+  ): Promise<Result<ProjectArchiveReceipt | null>>;
+  importArchive(signal?: AbortSignal): Promise<Result<TProject | null>>;
+}
+
 /** Host-neutral progress for a long-running video export. */
 export interface VideoExportProgress {
   readonly jobId: JobId;

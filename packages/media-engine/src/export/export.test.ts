@@ -14,6 +14,11 @@ const clip = (overrides: Partial<ExportClip> = {}): ExportClip => ({
   src: 'C:\\media\\a.mp4',
   sourceStart: ms(0),
   duration: ms(5000),
+  transform: { positionX: 0, positionY: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+  opacity: 1,
+  blendMode: 'normal',
+  animation: [],
+  audio: { volume: 1, isMuted: false, fadeIn: ms(0), fadeOut: ms(0) },
   ...overrides,
 });
 
@@ -110,8 +115,36 @@ describe('buildExportArgs', () => {
     const args = unwrap(buildExportArgs([clip()], SETTINGS));
     const graph = args[args.indexOf('-filter_complex') + 1];
     expect(graph).toContain('scale=1080:1920');
-    expect(graph).toContain('pad=1080:1920');
+    expect(graph).toContain('color=c=black:s=1080x1920');
     expect(graph).toContain('fps=30');
+  });
+
+  it('compiles static transform, opacity, volume and fades into the graph', () => {
+    const args = unwrap(
+      buildExportArgs(
+        [
+          clip({
+            transform: { positionX: 0.1, positionY: -0.2, scaleX: 1.5, scaleY: 0.75, rotation: 15 },
+            opacity: 0.5,
+            audio: { volume: 0.4, isMuted: false, fadeIn: ms(250), fadeOut: ms(500) },
+          }),
+        ],
+        SETTINGS,
+      ),
+    );
+    const graph = args[args.indexOf('-filter_complex') + 1];
+    expect(graph).toContain('colorchannelmixer=aa=0.5');
+    expect(graph).toContain('volume=0.4');
+    expect(graph).toContain('afade=t=in:st=0:d=0.25');
+    expect(graph).toContain('afade=t=out:st=4.5:d=0.5');
+  });
+
+  it('rejects animation and non-normal blend modes instead of exporting a visual lie', () => {
+    const animated = clip({
+      animation: [{ property: 'opacity', offset: ms(0), value: 0, easing: 'linear' }],
+    });
+    expect(buildExportArgs([animated], SETTINGS).ok).toBe(false);
+    expect(buildExportArgs([clip({ blendMode: 'screen' })], SETTINGS).ok).toBe(false);
   });
 
   it('emits machine-readable progress and writes to the output path', () => {

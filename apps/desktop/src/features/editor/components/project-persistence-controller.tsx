@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { MediaItem } from '@videodip/media-engine';
 import { useEditorStore } from '../editor.store';
 import { useEditorHost } from '../host/editor-host';
+import { restoreProjectSnapshot } from '../lib/project-commands';
 import { loadLatestProject, saveProjectState } from '../lib/project-persistence';
 import { useProjectStore } from '../project.store';
 
@@ -37,18 +37,18 @@ export function ProjectPersistenceController() {
       }
 
       if (loaded.value === null) {
-        useEditorStore.getState().newProject();
+        if (useEditorStore.getState().projectId === null) {
+          useEditorStore.getState().newProject();
+        }
         setReady(true);
         return;
       }
 
-      useEditorStore.getState().restoreProject({
-        ...loaded.value,
-        // Zod's exact runtime output matches MediaItem. This cast closes the
-        // exactOptionalPropertyTypes gap created by inferred optional fields.
-        mediaItems: loaded.value.mediaItems as readonly MediaItem[],
-      });
-      useProjectStore.getState().load(loaded.value.timeline);
+      // A user command may have created a project while storage was loading.
+      // Never overwrite that newer intent with the startup snapshot.
+      if (useEditorStore.getState().projectId === null) {
+        restoreProjectSnapshot(loaded.value);
+      }
       setReady(true);
     })();
 

@@ -11,15 +11,22 @@ import {
   removeClip as removeClipOp,
   removeTrack as removeTrackOp,
   reorderTrack as reorderTrackOp,
+  setClipAnimation as setClipAnimationOp,
   splitClip as splitClipOp,
   trimClip as trimClipOp,
+  updateClipProperties as updateClipPropertiesOp,
+  updateClipAudio as updateClipAudioOp,
   type AddClipInput,
   type CreateTrackInput,
+  type ClipKeyframe,
+  type ClipAudioSettings,
   type TimelineDocument,
   type TrimEdge,
+  type UpdateClipPropertiesInput,
 } from '@videodip/timeline';
 import { create } from 'zustand';
 import { useEditorStore } from './editor.store';
+import { useSubtitleStore } from './subtitle.store';
 
 /**
  * The project document: clips, tracks, what this app is actually editing.
@@ -50,6 +57,18 @@ export interface ProjectState {
     newTime: Milliseconds,
   ) => Result<TimelineDocument>;
   readonly splitClip: (clipId: ClipId, atTime: Milliseconds) => Result<TimelineDocument>;
+  readonly updateClipProperties: (
+    clipId: ClipId,
+    patch: UpdateClipPropertiesInput,
+  ) => Result<TimelineDocument>;
+  readonly setClipAnimation: (
+    clipId: ClipId,
+    animation: readonly ClipKeyframe[],
+  ) => Result<TimelineDocument>;
+  readonly updateClipAudio: (
+    clipId: ClipId,
+    patch: Partial<ClipAudioSettings>,
+  ) => Result<TimelineDocument>;
   /** Restores the previous document snapshot, if one exists. */
   readonly undo: () => void;
   /** Reapplies the next document snapshot after an undo, if one exists. */
@@ -109,6 +128,24 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   splitClip: (clipId, atTime) => {
     const result = splitClipOp(get().document, clipId, atTime);
+    if (result.ok) applyDocument(result.value);
+    return result;
+  },
+
+  updateClipProperties: (clipId, patch) => {
+    const result = updateClipPropertiesOp(get().document, clipId, patch);
+    if (result.ok) applyDocument(result.value);
+    return result;
+  },
+
+  setClipAnimation: (clipId, animation) => {
+    const result = setClipAnimationOp(get().document, clipId, animation);
+    if (result.ok) applyDocument(result.value);
+    return result;
+  },
+
+  updateClipAudio: (clipId, patch) => {
+    const result = updateClipAudioOp(get().document, clipId, patch);
     if (result.ok) applyDocument(result.value);
     return result;
   },
@@ -174,6 +211,11 @@ function setProjectState(state: Pick<ProjectState, 'document' | 'past' | 'future
 
 function syncEditor(document: TimelineDocument, dirty = true): void {
   const editor = useEditorStore.getState();
-  editor.setProjectDuration(getDuration(document));
+  editor.setProjectDuration(
+    Math.max(
+      getDuration(document),
+      useSubtitleStore.getState().document.segments.at(-1)?.end ?? 0,
+    ) as Milliseconds,
+  );
   if (dirty) editor.markDirty();
 }

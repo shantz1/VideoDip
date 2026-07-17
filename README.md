@@ -28,13 +28,13 @@ so far and [`CLAUDE.md`](./CLAUDE.md) for how the project is built.
 
 ## Requirements
 
-| Tool | Version | Needed for |
-| --- | --- | --- |
-| Node | ≥ 22.11 | everything |
-| pnpm | ≥ 10 | everything |
-| Rust + Cargo | stable | `apps/desktop` (Tauri) only |
-| FFmpeg | ≥ 6 | media processing |
-| Python | 3.11+ | local Whisper transcription |
+| Tool         | Version | Needed for                  |
+| ------------ | ------- | --------------------------- |
+| Node         | ≥ 22.11 | everything                  |
+| pnpm         | ≥ 10    | everything                  |
+| Rust + Cargo | stable  | `apps/desktop` (Tauri) only |
+| FFmpeg       | ≥ 6     | media processing            |
+| Python       | 3.11+   | local Whisper transcription |
 
 ## Getting started
 

@@ -26,12 +26,12 @@ describe('matchesCombo', () => {
   });
 
   it('maps mod to Ctrl off macOS', () => {
-    expect(matchesCombo(keyEvent({ key: 's', ctrlKey: true }), { key: 's', mod: true }, false)).toBe(
-      true,
-    );
-    expect(matchesCombo(keyEvent({ key: 's', metaKey: true }), { key: 's', mod: true }, false)).toBe(
-      false,
-    );
+    expect(
+      matchesCombo(keyEvent({ key: 's', ctrlKey: true }), { key: 's', mod: true }, false),
+    ).toBe(true);
+    expect(
+      matchesCombo(keyEvent({ key: 's', metaKey: true }), { key: 's', mod: true }, false),
+    ).toBe(false);
   });
 
   it('does not fire mod+s when shift is also held', () => {
@@ -168,7 +168,9 @@ describe('ShortcutRegistry', () => {
       registry.register(shortcut({ id: 'a', combo: { key: 'k', mod: true }, scope: 'global' }));
 
       expect(
-        registry.findConflict(shortcut({ id: 'b', combo: { key: 'k', mod: true }, scope: 'timeline' })),
+        registry.findConflict(
+          shortcut({ id: 'b', combo: { key: 'k', mod: true }, scope: 'timeline' }),
+        ),
       ).toBeDefined();
     });
   });

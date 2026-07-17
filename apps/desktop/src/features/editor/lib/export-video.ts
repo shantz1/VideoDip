@@ -1,7 +1,13 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
-import { buildExportArgs, getExportDuration, type ExportClip } from '@videodip/media-engine';
+import {
+  buildExportArgs,
+  getExportDuration,
+  getExportPreset,
+  type ExportClip,
+  type ExportPresetId,
+} from '@videodip/media-engine';
 import { appError, err, ok, type AssetId, type Result } from '@videodip/shared';
 import type { TimelineDocument } from '@videodip/timeline';
 import type { AspectRatio } from '../editor.store';
@@ -9,6 +15,7 @@ import { PROJECT_FPS } from './composition-adapter';
 
 /** Short edge of every export, the standard short-form delivery size. */
 const SHORT_EDGE = 1080;
+const EXPORT_TIMEOUT_MS = 30 * 60 * 1_000;
 
 /**
  * Output pixel dimensions for an aspect ratio, from the "1080 short edge"
@@ -42,7 +49,9 @@ export function toExportClips(
   resolvePath: (assetId: AssetId) => string | undefined,
 ): Result<readonly ExportClip[]> {
   const videoTrack = document.tracks.find((track) => track.kind === 'video');
-  const clips = [...(videoTrack?.clips ?? [])].sort((a, b) => a.start - b.start);
+  const clips = [...(videoTrack?.clips ?? [])]
+    .filter((clip) => clip.isEnabled)
+    .sort((a, b) => a.start - b.start);
 
   const exportClips: ExportClip[] = [];
   for (const clip of clips) {
@@ -56,13 +65,23 @@ export function toExportClips(
         ),
       );
     }
-    exportClips.push({ src, sourceStart: clip.sourceStart, duration: clip.duration });
+    exportClips.push({
+      src,
+      sourceStart: clip.sourceStart,
+      duration: clip.duration,
+      transform: clip.transform,
+      opacity: clip.opacity,
+      blendMode: clip.blendMode,
+      animation: clip.animation,
+      audio: clip.audio,
+    });
   }
   return ok(exportClips);
 }
 
 /** Payload of the Rust side's `export-progress` events. */
 interface ExportProgressEvent {
+  readonly taskId: string;
   readonly fraction: number;
 }
 
@@ -81,6 +100,8 @@ export async function exportTimeline(
   resolvePath: (assetId: AssetId) => string | undefined,
   aspectRatio: AspectRatio,
   onProgress: (fraction: number) => void,
+  signal?: AbortSignal,
+  presetId?: ExportPresetId,
 ): Promise<Result<string | null>> {
   if (!isTauri()) {
     return err(
@@ -97,11 +118,25 @@ export async function exportTimeline(
 
   // Validate the timeline before showing any dialog: asking the user to pick
   // a destination for an export that can never start is a small betrayal.
-  const { width, height } = exportFrameSize(aspectRatio);
-  const probeArgs = buildExportArgs(clips.value, {
+  const requestedPreset = presetId ? getExportPreset(presetId) : null;
+  if (requestedPreset && !requestedPreset.ok) return requestedPreset;
+  const fallbackSize = exportFrameSize(aspectRatio);
+  const encoding = requestedPreset?.ok ? requestedPreset.value : undefined;
+  const { width, height } = encoding ?? fallbackSize;
+  const exportSettings = {
     width,
     height,
-    fps: PROJECT_FPS,
+    fps: encoding?.fps ?? PROJECT_FPS,
+    ...(encoding
+      ? {
+          crf: encoding.crf,
+          encoderPreset: encoding.encoderPreset,
+          audioBitrate: encoding.audioBitrate,
+        }
+      : {}),
+  };
+  const probeArgs = buildExportArgs(clips.value, {
+    ...exportSettings,
     outputPath: 'probe.mp4',
   });
   if (!probeArgs.ok) return probeArgs;
@@ -116,30 +151,78 @@ export async function exportTimeline(
     return err(appError('IO', 'The save dialog failed.', 'Try exporting again.', { cause }));
   }
   if (outputPath === null) return ok(null);
+  if (signal?.aborted) return ok(null);
 
   const args = buildExportArgs(clips.value, {
-    width,
-    height,
-    fps: PROJECT_FPS,
+    ...exportSettings,
     outputPath,
   });
   if (!args.ok) return args;
 
-  const unlisten = await listen<ExportProgressEvent>('export-progress', (event) => {
-    onProgress(event.payload.fraction);
-  });
+  const taskId = crypto.randomUUID();
+  const operation = createExportSignal(signal);
+  const cancel = () => {
+    void invoke('cancel_export', { taskId }).catch(() => undefined);
+  };
+  let unlisten: (() => void) | undefined;
   try {
+    unlisten = await listen<ExportProgressEvent>('export-progress', (event) => {
+      if (event.payload.taskId !== taskId || !Number.isFinite(event.payload.fraction)) return;
+      onProgress(Math.max(0, Math.min(1, event.payload.fraction)));
+    });
+    if (operation.signal.aborted) {
+      return operation.didTimeOut() ? err(exportTimeoutError()) : ok(null);
+    }
+    operation.signal.addEventListener('abort', cancel, { once: true });
     await invoke('export_video', {
+      taskId,
       args: args.value,
       totalDurationMs: getExportDuration(clips.value),
     });
+    if (operation.signal.aborted) {
+      return operation.didTimeOut() ? err(exportTimeoutError()) : ok(null);
+    }
     return ok(outputPath);
   } catch (cause) {
+    if (operation.signal.aborted) {
+      return operation.didTimeOut() ? err(exportTimeoutError()) : ok(null);
+    }
     // The Rust side's error strings are written for the user and carry their
     // own recovery hints (missing FFmpeg, encoder failure tail), so they land
     // in `recovery` — the field the UI actually shows.
     return err(appError('IO', 'FFmpeg export failed.', String(cause), { cause }));
   } finally {
-    unlisten();
+    operation.signal.removeEventListener('abort', cancel);
+    operation.cleanup();
+    unlisten?.();
   }
+}
+
+function createExportSignal(external: AbortSignal | undefined) {
+  const controller = new AbortController();
+  let didTimeOut = false;
+  const abortFromExternal = () => controller.abort(external?.reason);
+  if (external?.aborted) abortFromExternal();
+  else external?.addEventListener('abort', abortFromExternal, { once: true });
+  const timeout = setTimeout(() => {
+    didTimeOut = true;
+    controller.abort('timeout');
+  }, EXPORT_TIMEOUT_MS);
+  return {
+    signal: controller.signal,
+    didTimeOut: () => didTimeOut,
+    cleanup: () => {
+      clearTimeout(timeout);
+      external?.removeEventListener('abort', abortFromExternal);
+    },
+  };
+}
+
+function exportTimeoutError() {
+  return appError(
+    'CANCELLED',
+    'FFmpeg export exceeded the local time limit.',
+    'Retry with a shorter timeline or a faster export preset.',
+    { retryable: true, context: { reason: 'timeout' } },
+  );
 }

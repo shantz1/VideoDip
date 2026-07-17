@@ -1,6 +1,6 @@
 'use client';
 
-import type { MediaItem } from '@videodip/media-engine';
+import type { ExportPresetId, MediaItem } from '@videodip/media-engine';
 import type { ClipId, Milliseconds, ProjectId } from '@videodip/shared';
 import { ms } from '@videodip/shared';
 import { create } from 'zustand';
@@ -75,6 +75,8 @@ export interface EditorState {
   // --- Canvas ---
   /** Drives the preview stage's shape and, eventually, the export frame size. */
   readonly aspectRatio: AspectRatio;
+  /** Named output encoding preference; UI-only until export starts. */
+  readonly exportPresetId: ExportPresetId;
 
   // --- Selection ---
   /**
@@ -123,12 +125,15 @@ export interface EditorState {
   readonly zoomOut: () => void;
   readonly toggleSnap: () => void;
   readonly setAspectRatio: (ratio: AspectRatio) => void;
+  readonly setExportPreset: (id: ExportPresetId) => void;
   readonly selectClip: (clipId: ClipId | null) => void;
   readonly addMediaItems: (items: readonly MediaItem[]) => void;
   /** Marks the in-memory project as changed since its last persisted state. */
   readonly markDirty: () => void;
   /** Clears dirty state only if the completed save matches the latest edit. */
   readonly markSaved: (revision: number) => void;
+  /** Changes the durable display name and records it as an edit. */
+  readonly renameProject: (name: string) => void;
   /**
    * Starts a new, unnamed, in-memory project.
    *
@@ -165,6 +170,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   snapEnabled: true,
 
   aspectRatio: '9:16',
+  exportPresetId: 'tiktok-vertical',
 
   selectedClipId: null,
 
@@ -223,6 +229,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
         ? state
         : { aspectRatio, isDirty: true, editRevision: state.editRevision + 1 },
     ),
+  setExportPreset: (exportPresetId) => set({ exportPresetId }),
 
   selectClip: (selectedClipId) => set({ selectedClipId }),
 
@@ -239,6 +246,13 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
 
   markSaved: (revision) =>
     set((state) => (state.editRevision === revision ? { isDirty: false } : state)),
+
+  renameProject: (name) =>
+    set((state) =>
+      state.projectName === name
+        ? state
+        : { projectName: name, isDirty: true, editRevision: state.editRevision + 1 },
+    ),
 
   newProject: (identity) => {
     const match = get().projectName?.match(UNTITLED_PROJECT_PATTERN);
