@@ -2,12 +2,13 @@
 
 A living checklist, not a decision record (see `docs/adr/` for those). Updated
 as items complete or new ones surface. Worked one at a time, per `CLAUDE.md`'s
-"one feature at a time, completely" rule.
+"one feature at a time, completely" rule. The end-to-end picture across all
+phases lives in the root `TRACKER.md`; this file is only the short horizon.
 
 ## Now
 
 - [ ] **Real media duration on import** — every clip added from the media
-      pool is a placeholder 5s (`DEFAULT_CLIP_DURATION` in
+      pool is a placeholder 5s (`UNKNOWN_CLIP_DURATION` in
       `left-sidebar.tsx`) because `media-engine` doesn't probe files yet.
       Probing belongs behind a Tauri command (FFmpeg/ffprobe orchestration is
       `media-engine`'s whole job); the import flow then passes real duration
