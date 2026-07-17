@@ -15,7 +15,13 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@remotion/player": "catalog:",
+    "@tauri-apps/api": "catalog:",
+    "@tauri-apps/plugin-dialog": "catalog:",
+    "@videodip/media-engine": "workspace:*",
+    "@videodip/renderer": "workspace:*",
     "@videodip/shared": "workspace:*",
+    "@videodip/timeline": "workspace:*",
     "@videodip/ui": "workspace:*",
     "framer-motion": "catalog:",
     "lucide-react": "catalog:",
@@ -26,6 +32,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "catalog:",
+    "@tauri-apps/cli": "catalog:",
     "@testing-library/jest-dom": "catalog:",
     "@testing-library/react": "catalog:",
     "@testing-library/user-event": "catalog:",
