@@ -1,0 +1,41 @@
+{
+  "name": "@videodip/renderer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Remotion compositions. The same composition drives both the desktop live preview and headless server-side export — that sharing is the entire point of this workspace existing separately from apps/desktop.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup && tsc --emitDeclarationOnly",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "studio": "remotion studio src/remotion-entry.tsx",
+    "render": "remotion render src/remotion-entry.tsx",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rimraf dist .turbo"
+  },
+  "dependencies": {
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "remotion": "catalog:"
+  },
+  "devDependencies": {
+    "@remotion/cli": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "rimraf": "6.1.2",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

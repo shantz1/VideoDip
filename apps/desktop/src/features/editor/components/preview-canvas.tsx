@@ -3,15 +3,32 @@
 import { ms } from '@videodip/shared';
 import { Button, cn } from '@videodip/ui';
 import { Maximize2, Pause, Play, SkipBack, SkipForward } from 'lucide-react';
-import { useEditorStore } from '../editor.store';
+import { useEditorStore, type AspectRatio } from '../editor.store';
 import { formatTimecode } from '../lib/timecode';
+import { PreviewPlayer } from './preview-player';
+
+/**
+ * CSS `aspect-ratio` values, not Tailwind classes.
+ *
+ * A dynamically interpolated `aspect-[${w}/${h}]` class would not be picked up
+ * by Tailwind's static build-time scanner — it only sees literal strings in
+ * source. Inline style is the correct escape hatch here, same as the original
+ * hardcoded value: this is layout geometry, not a themeable design token.
+ */
+const ASPECT_RATIO_CSS: Record<AspectRatio, string> = {
+  '9:16': '9 / 16',
+  '3:4': '3 / 4',
+  '4:5': '4 / 5',
+  '16:9': '16 / 9',
+};
 
 /**
  * The video preview.
  *
- * PLACEHOLDER: renders an empty canvas surface. The real player is a Remotion
- * `<Player>` driven by the timeline model. It stays behind this boundary so
- * that rendering remains independent of the UI, per `CLAUDE.md`.
+ * The stage hosts `PreviewPlayer` — `@remotion/player` driving
+ * `@videodip/renderer`'s composition from the live timeline document. The
+ * composition itself lives in `apps/renderer` so headless export renders the
+ * exact same component; only the player chrome is desktop-specific.
  */
 export function PreviewCanvas() {
   return (
@@ -25,17 +42,21 @@ export function PreviewCanvas() {
 }
 
 function Stage() {
+  const aspectRatio = useEditorStore((s) => s.aspectRatio);
+
   return (
     <div
       className={cn(
-        // 9:16 for short-form. Hardcoded until the project model carries an
-        // aspect ratio; `aspect-[9/16]` is layout, not a design token.
-        'relative aspect-[9/16] h-full max-h-full overflow-hidden rounded-lg',
+        // max-w-full alongside h-full/max-h-full lets the browser's native
+        // aspect-ratio containment shrink whichever axis is over-constrained
+        // — needed once 16:9 can appear in a portrait-shaped window.
+        'relative h-full max-h-full max-w-full overflow-hidden rounded-lg',
         'bg-canvas shadow-lg ring-1 ring-border-subtle',
       )}
+      style={{ aspectRatio: ASPECT_RATIO_CSS[aspectRatio] }}
     >
-      <div className="absolute inset-0 grid place-items-center">
-        <p className="text-xs text-text-tertiary">Preview</p>
+      <div className="absolute inset-0">
+        <PreviewPlayer />
       </div>
     </div>
   );
