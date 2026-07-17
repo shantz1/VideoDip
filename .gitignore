@@ -178,6 +178,7 @@ ffprobe.exe
 .claude/**/*.local.json
 .cursor/
 .aider*
+.commandcode/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.shared.json
