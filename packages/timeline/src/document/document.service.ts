@@ -8,6 +8,7 @@ import {
   type Milliseconds,
   type Result,
   type TrackId,
+  type TransitionId,
 } from '@videodip/shared';
 import type {
   Clip,
@@ -17,9 +18,12 @@ import type {
   ClipMetadata,
   ClipKeyframe,
   ClipTransform,
+  ClipTransition,
+  CoreTransitionKind,
   TimelineDocument,
   Track,
   TrackKind,
+  TransitionKind,
 } from './document.types.js';
 
 /** Identity transform assigned to newly placed clips. */
@@ -46,9 +50,22 @@ export const DEFAULT_CLIP_AUDIO: ClipAudioSettings = {
   fadeOut: 0 as Milliseconds,
 };
 
-/** Creates a timeline from consumer-chosen tracks, preserving their order. */
-export function createTimeline(tracks: readonly Track[] = []): TimelineDocument {
-  return { tracks: [...tracks] };
+/** Built-in transition ids supported consistently by preview and FFmpeg export. */
+export const CORE_TRANSITION_KINDS: readonly CoreTransitionKind[] = [
+  'crossfade',
+  'dip-to-black',
+  'slide-left',
+  'slide-right',
+  'wipe-left',
+  'wipe-right',
+];
+
+/** Creates a timeline from consumer-chosen tracks and transition relations. */
+export function createTimeline(
+  tracks: readonly Track[] = [],
+  transitions: readonly ClipTransition[] = [],
+): TimelineDocument {
+  return { tracks: [...tracks], transitions: [...transitions] };
 }
 
 /** Input for creating a track without exposing a mutable clip array. */
@@ -104,6 +121,7 @@ export function addTrack(
   }
 
   return ok({
+    ...document,
     tracks: [...document.tracks.slice(0, index), track, ...document.tracks.slice(index)],
   });
 }
@@ -126,7 +144,10 @@ export function removeTrack(
       ),
     );
   }
-  return ok({ tracks: document.tracks.filter((candidate) => candidate.id !== trackId) });
+  return ok({
+    ...document,
+    tracks: document.tracks.filter((candidate) => candidate.id !== trackId),
+  });
 }
 
 /** Moves a track to a new top-to-bottom visual index. */
@@ -155,7 +176,7 @@ export function reorderTrack(
     return err(appError('NOT_FOUND', `No track with id "${trackId}".`, 'Refresh the timeline.'));
   }
   tracks.splice(index, 0, track);
-  return ok({ tracks });
+  return ok({ ...document, tracks });
 }
 
 /** The project's total duration: the far edge of its last clip, or zero. */
@@ -198,8 +219,210 @@ function withTrackClips(
   clips: readonly Clip[],
 ): TimelineDocument {
   return {
+    ...document,
     tracks: document.tracks.map((track) => (track.id === trackId ? { ...track, clips } : track)),
   };
+}
+
+/** Input for joining an ordered, touching pair of clips. */
+export interface AddTransitionInput {
+  readonly id?: TransitionId;
+  readonly fromClipId: ClipId;
+  readonly toClipId: ClipId;
+  readonly kind: TransitionKind;
+  readonly duration: Milliseconds;
+  readonly parameters?: ClipMetadata;
+}
+
+/** Editable transition fields; endpoint identity is deliberately immutable. */
+export interface UpdateTransitionInput {
+  readonly kind?: TransitionKind;
+  readonly duration?: Milliseconds;
+  readonly parameters?: ClipMetadata;
+}
+
+/** Adds an explicit effect relation at the cut between two adjacent clips. */
+export function addTransition(
+  document: TimelineDocument,
+  input: AddTransitionInput,
+): Result<TimelineDocument> {
+  const endpoints = findTransitionEndpoints(document, input.fromClipId, input.toClipId);
+  if (!endpoints.ok) return endpoints;
+  const transition: ClipTransition = {
+    id: input.id ?? (crypto.randomUUID() as TransitionId),
+    trackId: endpoints.value.track.id,
+    fromClipId: input.fromClipId,
+    toClipId: input.toClipId,
+    kind: input.kind,
+    duration: input.duration,
+    parameters: { ...(input.parameters ?? {}) },
+  };
+  const validation = validateTransition(document, transition);
+  if (!validation.ok) return validation;
+  return ok({ ...document, transitions: [...document.transitions, transition] });
+}
+
+/** Updates transition presentation while preserving its cut endpoints. */
+export function updateTransition(
+  document: TimelineDocument,
+  transitionId: TransitionId,
+  patch: UpdateTransitionInput,
+): Result<TimelineDocument> {
+  const transition = document.transitions.find((candidate) => candidate.id === transitionId);
+  if (!transition) {
+    return err(
+      appError('NOT_FOUND', `No transition with id "${transitionId}".`, 'Reload the timeline.'),
+    );
+  }
+  const updated: ClipTransition = {
+    ...transition,
+    ...(patch.kind === undefined ? {} : { kind: patch.kind }),
+    ...(patch.duration === undefined ? {} : { duration: patch.duration }),
+    parameters: { ...transition.parameters, ...patch.parameters },
+  };
+  const validation = validateTransition(document, updated, transitionId);
+  if (!validation.ok) return validation;
+  return ok({
+    ...document,
+    transitions: document.transitions.map((candidate) =>
+      candidate.id === transitionId ? updated : candidate,
+    ),
+  });
+}
+
+/** Removes a transition. Already-removed ids are a safe no-op. */
+export function removeTransition(
+  document: TimelineDocument,
+  transitionId: TransitionId,
+): TimelineDocument {
+  if (!document.transitions.some((transition) => transition.id === transitionId)) return document;
+  return {
+    ...document,
+    transitions: document.transitions.filter((transition) => transition.id !== transitionId),
+  };
+}
+
+function findTransitionEndpoints(
+  document: TimelineDocument,
+  fromClipId: ClipId,
+  toClipId: ClipId,
+): Result<{ readonly track: Track; readonly from: Clip; readonly to: Clip }> {
+  const from = findClip(document, fromClipId);
+  const to = findClip(document, toClipId);
+  if (!from || !to) {
+    return err(
+      appError(
+        'NOT_FOUND',
+        'A transition endpoint clip no longer exists.',
+        'Choose two clips that are still on the timeline.',
+      ),
+    );
+  }
+  if (from.clip.trackId !== to.clip.trackId) {
+    return err(
+      appError(
+        'VALIDATION',
+        'A transition must join clips on the same track.',
+        'Move both clips onto one track before adding the transition.',
+      ),
+    );
+  }
+  const track = document.tracks[from.trackIndex];
+  if (!track) {
+    return err(appError('NOT_FOUND', 'The transition track disappeared.', 'Reload the timeline.'));
+  }
+  const ordered = [...track.clips].sort((left, right) => left.start - right.start);
+  const fromIndex = ordered.findIndex((clip) => clip.id === fromClipId);
+  const next = ordered[fromIndex + 1];
+  if (
+    fromIndex < 0 ||
+    next?.id !== toClipId ||
+    from.clip.start + from.clip.duration !== to.clip.start
+  ) {
+    return err(
+      appError(
+        'CONFLICT',
+        'Transitions require two adjacent clips with no timeline gap.',
+        'Move the clips until their edges touch, then add the transition.',
+      ),
+    );
+  }
+  return ok({ track, from: from.clip, to: to.clip });
+}
+
+function validateTransition(
+  document: TimelineDocument,
+  transition: ClipTransition,
+  replacingId?: TransitionId,
+): Result<TimelineDocument> {
+  const endpoints = findTransitionEndpoints(document, transition.fromClipId, transition.toClipId);
+  if (!endpoints.ok) return endpoints;
+  const maximumDuration = Math.min(endpoints.value.from.duration, endpoints.value.to.duration);
+  if (
+    !transition.kind.trim() ||
+    transition.kind.length > 128 ||
+    !Number.isFinite(transition.duration) ||
+    transition.duration <= 0 ||
+    transition.duration > maximumDuration
+  ) {
+    return err(
+      appError(
+        'VALIDATION',
+        'Transition kind or duration is invalid for these clips.',
+        `Choose a named transition no longer than ${maximumDuration / 1000} seconds.`,
+      ),
+    );
+  }
+  const parameterEntries = Object.entries(transition.parameters);
+  if (
+    parameterEntries.length > 64 ||
+    parameterEntries.some(
+      ([key, value]) =>
+        !key.trim() || key.length > 128 || (typeof value === 'number' && !Number.isFinite(value)),
+    )
+  ) {
+    return err(
+      appError(
+        'VALIDATION',
+        'Transition parameters contain invalid plugin data.',
+        'Use at most 64 short keys with finite primitive values.',
+      ),
+    );
+  }
+  if (
+    document.transitions.some(
+      (candidate) =>
+        candidate.id !== replacingId &&
+        (candidate.id === transition.id ||
+          (candidate.fromClipId === transition.fromClipId &&
+            candidate.toClipId === transition.toClipId)),
+    )
+  ) {
+    return err(
+      appError(
+        'CONFLICT',
+        'That cut already has a transition or duplicate transition id.',
+        'Edit the existing transition instead of adding another.',
+      ),
+    );
+  }
+  return ok(document);
+}
+
+/** Drops dangling relations and clamps duration after clip timing edits. */
+function reconcileTransitions(document: TimelineDocument): TimelineDocument {
+  const transitions: ClipTransition[] = [];
+  for (const transition of document.transitions) {
+    const endpoints = findTransitionEndpoints(document, transition.fromClipId, transition.toClipId);
+    if (!endpoints.ok) continue;
+    const maximumDuration = Math.min(endpoints.value.from.duration, endpoints.value.to.duration);
+    transitions.push({
+      ...transition,
+      trackId: endpoints.value.track.id,
+      duration: Math.min(transition.duration, maximumDuration) as Milliseconds,
+    });
+  }
+  return { ...document, transitions };
 }
 
 export interface AddClipInput {
@@ -573,11 +796,17 @@ export function removeClip(document: TimelineDocument, clipId: ClipId): Timeline
   const track = document.tracks[found.trackIndex];
   if (!track) return document;
 
-  return withTrackClips(
+  const withoutClip = withTrackClips(
     document,
     track.id,
     track.clips.filter((c) => c.id !== clipId),
   );
+  return {
+    ...withoutClip,
+    transitions: withoutClip.transitions.filter(
+      (transition) => transition.fromClipId !== clipId && transition.toClipId !== clipId,
+    ),
+  };
 }
 
 /**
@@ -756,10 +985,12 @@ export function trimClip(
   }
 
   return ok(
-    withTrackClips(
-      document,
-      track.id,
-      [...siblings, trimmed].sort((a, b) => a.start - b.start),
+    reconcileTransitions(
+      withTrackClips(
+        document,
+        track.id,
+        [...siblings, trimmed].sort((a, b) => a.start - b.start),
+      ),
     ),
   );
 }
@@ -833,11 +1064,19 @@ export function splitClip(
   };
 
   const rest = track.clips.filter((c) => c.id !== clipId);
+  const withRemappedOutgoingTransition: TimelineDocument = {
+    ...document,
+    transitions: document.transitions.map((transition) =>
+      transition.fromClipId === clipId ? { ...transition, fromClipId: right.id } : transition,
+    ),
+  };
   return ok(
-    withTrackClips(
-      document,
-      track.id,
-      [...rest, left, right].sort((a, b) => a.start - b.start),
+    reconcileTransitions(
+      withTrackClips(
+        withRemappedOutgoingTransition,
+        track.id,
+        [...rest, left, right].sort((a, b) => a.start - b.start),
+      ),
     ),
   );
 }

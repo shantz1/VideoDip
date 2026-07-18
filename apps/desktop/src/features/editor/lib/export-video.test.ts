@@ -1,5 +1,5 @@
 import { ms, type AssetId, type TrackId } from '@videodip/shared';
-import { addClip, createTimeline, createTrack } from '@videodip/timeline';
+import { addClip, addTransition, createTimeline, createTrack } from '@videodip/timeline';
 import { describe, expect, it } from 'vitest';
 import { exportFrameSize, toExportClips } from './export-video';
 
@@ -85,5 +85,29 @@ describe('toExportClips', () => {
       }),
     );
     expect(unwrap(toExportClips(doc, () => 'C:\\media\\a.mp4'))).toEqual([]);
+  });
+
+  it('resolves a transition onto the outgoing native export clip', () => {
+    let doc = createEmptyTimeline();
+    doc = unwrap(
+      addClip(doc, { trackId: VIDEO, assetId: ASSET_A, start: ms(0), duration: ms(1000) }),
+    );
+    doc = unwrap(
+      addClip(doc, { trackId: VIDEO, assetId: ASSET_B, start: ms(1000), duration: ms(1000) }),
+    );
+    const [from, to] = doc.tracks[0]?.clips ?? [];
+    if (!from || !to) throw new Error('Expected adjacent clips.');
+    doc = unwrap(
+      addTransition(doc, {
+        fromClipId: from.id,
+        toClipId: to.id,
+        kind: 'crossfade',
+        duration: ms(500),
+      }),
+    );
+
+    const clips = unwrap(toExportClips(doc, (assetId) => `C:\\media\\${String(assetId)}.mp4`));
+    expect(clips[0]?.transitionToNext).toEqual({ kind: 'crossfade', duration: 500 });
+    expect(clips[1]?.transitionToNext).toBeNull();
   });
 });

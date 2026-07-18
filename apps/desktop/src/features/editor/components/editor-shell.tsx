@@ -4,6 +4,7 @@ import { ms } from '@videodip/shared';
 import { useMemo } from 'react';
 import { CommandPalette, useShortcuts, type Shortcut } from '../../shortcuts/index';
 import { useEditorStore } from '../editor.store';
+import { workspaceGridTemplate } from '../lib/workspace-layout';
 import { useProjectStore } from '../project.store';
 import { useSubtitleStore } from '../subtitle.store';
 import { LeftSidebar } from './left-sidebar';
@@ -53,11 +54,15 @@ function EditorShellContent() {
   const setActivePanel = useEditorStore((s) => s.setActivePanel);
   const activePanel = useEditorStore((s) => s.activePanel);
   const isSidebarCollapsed = useEditorStore((s) => s.sidebarCollapsed);
+  const workspaceLayout = useEditorStore((s) => s.workspaceLayout);
   const selectedClipId = useEditorStore((s) => s.selectedClipId);
+  const selectedTransitionId = useEditorStore((s) => s.selectedTransitionId);
   const selectClip = useEditorStore((s) => s.selectClip);
+  const selectTransition = useEditorStore((s) => s.selectTransition);
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
   const removeClip = useProjectStore((s) => s.removeClip);
+  const removeTransition = useProjectStore((s) => s.removeTransition);
   const canUndo = useProjectStore((s) => s.past.length > 0);
   const canRedo = useProjectStore((s) => s.future.length > 0);
   const selectedSubtitleId = useSubtitleStore((state) => state.selectedSegmentId);
@@ -112,11 +117,15 @@ function EditorShellContent() {
         label: 'Delete selected clip',
         scope: 'timeline',
         combo: { key: 'delete' },
-        disabled: selectedClipId === null && selectedSubtitleId === null,
+        disabled:
+          selectedClipId === null && selectedTransitionId === null && selectedSubtitleId === null,
         run: () => {
           if (selectedClipId) {
             removeClip(selectedClipId);
             selectClip(null);
+          } else if (selectedTransitionId) {
+            removeTransition(selectedTransitionId);
+            selectTransition(null);
           } else if (selectedSubtitleId) {
             removeSubtitle(selectedSubtitleId);
           }
@@ -231,10 +240,13 @@ function EditorShellContent() {
       activePanel,
       isSidebarCollapsed,
       selectedClipId,
+      selectedTransitionId,
       selectClip,
+      selectTransition,
       undo,
       redo,
       removeClip,
+      removeTransition,
       canUndo,
       canRedo,
       selectedSubtitleId,
@@ -252,12 +264,24 @@ function EditorShellContent() {
       <ProjectPersistenceController />
       <CommandPalette />
       <TopToolbar />
-      <div className="flex min-h-0 flex-1">
-        <LeftSidebar />
-        <PreviewCanvas />
-        <RightInspector />
+      <div
+        className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[minmax(0,1fr)_16rem]"
+        data-workspace-layout={workspaceLayout}
+        style={{ gridTemplateAreas: workspaceGridTemplate(workspaceLayout) }}
+      >
+        <div className="min-h-0 overflow-hidden" style={{ gridArea: 'library' }}>
+          <LeftSidebar />
+        </div>
+        <div className="min-h-0 min-w-0" style={{ gridArea: 'preview' }}>
+          <PreviewCanvas />
+        </div>
+        <div className="min-h-0 overflow-hidden" style={{ gridArea: 'inspector' }}>
+          <RightInspector />
+        </div>
+        <div className="min-h-0 min-w-0" style={{ gridArea: 'timeline' }}>
+          <TimelinePanel />
+        </div>
       </div>
-      <TimelinePanel />
     </div>
   );
 }

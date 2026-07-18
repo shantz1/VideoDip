@@ -1,8 +1,9 @@
 'use client';
 
-import type { ClipId, Milliseconds, Result, TrackId } from '@videodip/shared';
+import type { ClipId, Milliseconds, Result, TrackId, TransitionId } from '@videodip/shared';
 import {
   addClip as addClipOp,
+  addTransition as addTransitionOp,
   addTrack as addTrackOp,
   createTimeline,
   createTrack,
@@ -10,19 +11,23 @@ import {
   moveClip as moveClipOp,
   removeClip as removeClipOp,
   removeTrack as removeTrackOp,
+  removeTransition as removeTransitionOp,
   reorderTrack as reorderTrackOp,
   setClipAnimation as setClipAnimationOp,
   splitClip as splitClipOp,
   trimClip as trimClipOp,
   updateClipProperties as updateClipPropertiesOp,
   updateClipAudio as updateClipAudioOp,
+  updateTransition as updateTransitionOp,
   type AddClipInput,
+  type AddTransitionInput,
   type CreateTrackInput,
   type ClipKeyframe,
   type ClipAudioSettings,
   type TimelineDocument,
   type TrimEdge,
   type UpdateClipPropertiesInput,
+  type UpdateTransitionInput,
 } from '@videodip/timeline';
 import { create } from 'zustand';
 import { useEditorStore } from './editor.store';
@@ -42,10 +47,12 @@ export interface ProjectState {
   readonly past: readonly TimelineDocument[];
   readonly future: readonly TimelineDocument[];
   readonly addClip: (input: AddClipInput) => Result<TimelineDocument>;
+  readonly addTransition: (input: AddTransitionInput) => Result<TimelineDocument>;
   readonly addTrack: (input: CreateTrackInput, index?: number) => Result<TimelineDocument>;
   readonly removeTrack: (trackId: TrackId) => Result<TimelineDocument>;
   readonly reorderTrack: (trackId: TrackId, index: number) => Result<TimelineDocument>;
   readonly removeClip: (clipId: ClipId) => void;
+  readonly removeTransition: (transitionId: TransitionId) => void;
   readonly moveClip: (
     clipId: ClipId,
     newStart: Milliseconds,
@@ -69,6 +76,10 @@ export interface ProjectState {
     clipId: ClipId,
     patch: Partial<ClipAudioSettings>,
   ) => Result<TimelineDocument>;
+  readonly updateTransition: (
+    transitionId: TransitionId,
+    patch: UpdateTransitionInput,
+  ) => Result<TimelineDocument>;
   /** Restores the previous document snapshot, if one exists. */
   readonly undo: () => void;
   /** Reapplies the next document snapshot after an undo, if one exists. */
@@ -86,6 +97,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   addClip: (input) => {
     const result = addClipOp(get().document, input);
+    if (result.ok) applyDocument(result.value);
+    return result;
+  },
+
+  addTransition: (input) => {
+    const result = addTransitionOp(get().document, input);
     if (result.ok) applyDocument(result.value);
     return result;
   },
@@ -111,6 +128,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   removeClip: (clipId) => {
     const before = get().document;
     const next = removeClipOp(before, clipId);
+    if (next !== before) applyDocument(next);
+  },
+
+  removeTransition: (transitionId) => {
+    const before = get().document;
+    const next = removeTransitionOp(before, transitionId);
     if (next !== before) applyDocument(next);
   },
 
@@ -146,6 +169,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   updateClipAudio: (clipId, patch) => {
     const result = updateClipAudioOp(get().document, clipId, patch);
+    if (result.ok) applyDocument(result.value);
+    return result;
+  },
+
+  updateTransition: (transitionId, patch) => {
+    const result = updateTransitionOp(get().document, transitionId, patch);
     if (result.ok) applyDocument(result.value);
     return result;
   },
@@ -211,6 +240,12 @@ function setProjectState(state: Pick<ProjectState, 'document' | 'past' | 'future
 
 function syncEditor(document: TimelineDocument, dirty = true): void {
   const editor = useEditorStore.getState();
+  if (
+    editor.selectedTransitionId !== null &&
+    !document.transitions.some((transition) => transition.id === editor.selectedTransitionId)
+  ) {
+    editor.selectTransition(null);
+  }
   editor.setProjectDuration(
     Math.max(
       getDuration(document),

@@ -70,6 +70,33 @@ describe('removeClip', () => {
   });
 });
 
+describe('transitions', () => {
+  it('adds, updates, removes, and undoes a transition relation', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(1000), duration: ms(1000) });
+    const [from, to] = videoClips() ?? [];
+    if (!from || !to) throw new Error('Expected adjacent clips.');
+
+    const added = state().addTransition({
+      fromClipId: from.id,
+      toClipId: to.id,
+      kind: 'crossfade',
+      duration: ms(250),
+    });
+    expect(added.ok).toBe(true);
+    const transition = state().document.transitions[0];
+    if (!transition) throw new Error('Expected a transition.');
+
+    expect(state().updateTransition(transition.id, { kind: 'wipe-left' }).ok).toBe(true);
+    expect(state().document.transitions[0]?.kind).toBe('wipe-left');
+    state().undo();
+    expect(state().document.transitions[0]?.kind).toBe('crossfade');
+
+    state().removeTransition(transition.id);
+    expect(state().document.transitions).toEqual([]);
+  });
+});
+
 describe('moveClip / trimClip / splitClip', () => {
   it('moveClip relocates a clip and updates the document', () => {
     state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });

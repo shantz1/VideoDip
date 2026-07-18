@@ -35,6 +35,32 @@ describe('parseWhisperOutput', () => {
     expect(parseWhisperOutput({ result: {} }, ms(1)).ok).toBe(false);
   });
 
+  it('accepts zero-length whisper.cpp control-token offsets', () => {
+    const result = parseWhisperOutput(
+      {
+        result: { language: 'hi' },
+        transcription: [
+          {
+            offsets: { from: 0, to: 900 },
+            text: ' namaste',
+            tokens: [
+              { text: '[_BEG_]', offsets: { from: 0, to: 0 }, p: 1 },
+              { text: ' namaste', offsets: { from: 100, to: 900 }, p: 0.95 },
+              { text: '[_TT_45]', offsets: { from: 900, to: 900 }, p: 0.8 },
+            ],
+          },
+        ],
+      },
+      ms(20),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.segments[0]?.words).toEqual([
+      { text: 'namaste', start: 100, end: 900, confidence: 0.95 },
+    ]);
+  });
+
   it('exposes the complete multilingual model language list through the provider port', async () => {
     const { provider } = createWhisperIntegration(async () => ({
       runtimeAvailable: true,

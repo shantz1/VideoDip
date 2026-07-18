@@ -1,6 +1,6 @@
 import { fps, ms, msToFrames, type AssetId, type Fps, type MediaKind } from '@videodip/shared';
-import type { TimelineDocument } from '@videodip/timeline';
-import type { CompositionClip } from '@videodip/renderer';
+import type { ClipTransition, TimelineDocument } from '@videodip/timeline';
+import type { CompositionClip, CompositionTransition } from '@videodip/renderer';
 import type { SubtitleDocument } from '@videodip/subtitle-engine';
 import type { CompositionSubtitle } from '@videodip/renderer';
 
@@ -70,11 +70,32 @@ export function toCompositionClips(
           fadeInFrames: msToFrames(clip.audio.fadeIn, frameRate),
           fadeOutFrames: msToFrames(clip.audio.fadeOut, frameRate),
         },
+        transitionIn: toCompositionTransition(
+          document.transitions.find((transition) => transition.toClipId === clip.id),
+          frameRate,
+        ),
+        transitionOut: toCompositionTransition(
+          document.transitions.find((transition) => transition.fromClipId === clip.id),
+          frameRate,
+        ),
       });
     }
   }
 
   return clips;
+}
+
+function toCompositionTransition(
+  transition: ClipTransition | undefined,
+  frameRate: Fps,
+): CompositionTransition | null {
+  if (!transition) return null;
+  return {
+    id: transition.id,
+    kind: transition.kind,
+    durationInFrames: Math.max(1, msToFrames(transition.duration, frameRate)),
+    parameters: transition.parameters,
+  };
 }
 
 /** Resolves editable millisecond subtitle cues into the shared frame contract. */

@@ -116,6 +116,43 @@ describe('playback', () => {
 });
 
 describe('layout', () => {
+  it('applies a full video workspace without changing project content', () => {
+    useEditorStore.setState({
+      workspaceLayout: 'short-video',
+      aspectRatio: '9:16',
+      sidebarCollapsed: true,
+      inspectorCollapsed: true,
+    });
+
+    state().setWorkspaceLayout('video');
+
+    expect(state()).toMatchObject({
+      workspaceLayout: 'video',
+      aspectRatio: '9:16',
+      sidebarCollapsed: false,
+      inspectorCollapsed: false,
+      isDirty: false,
+      editRevision: 0,
+    });
+  });
+
+  it('leaves the active workspace unchanged while restoring a project', () => {
+    useEditorStore.setState({ workspaceLayout: 'video' });
+
+    state().restoreProject({
+      id: 'restored-layout' as ProjectId,
+      name: 'Portrait project',
+      aspectRatio: '9:16',
+      mediaItems: [],
+      createdAt: '2026-07-18T00:00:00.000Z',
+    });
+
+    expect(state().workspaceLayout).toBe('video');
+    expect(state().aspectRatio).toBe('9:16');
+    expect(state().editRevision).toBe(0);
+    expect(state().isDirty).toBe(false);
+  });
+
   it('reveals a collapsed sidebar when a different panel is selected', () => {
     // Otherwise the click appears to do nothing.
     useEditorStore.setState({ sidebarCollapsed: true, activePanel: 'media' });
@@ -141,9 +178,16 @@ describe('layout', () => {
 });
 
 describe('selection', () => {
-  it('selects and clears a clip', () => {
+  it('keeps clip and transition selections mutually exclusive', () => {
     state().selectClip('clip-1' as never);
     expect(state().selectedClipId).toBe('clip-1');
+
+    state().selectTransition('transition-1' as never);
+    expect(state().selectedTransitionId).toBe('transition-1');
+    expect(state().selectedClipId).toBeNull();
+
+    state().selectClip('clip-2' as never);
+    expect(state().selectedTransitionId).toBeNull();
 
     state().selectClip(null);
     expect(state().selectedClipId).toBeNull();

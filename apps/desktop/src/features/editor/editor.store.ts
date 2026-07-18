@@ -1,7 +1,7 @@
 'use client';
 
 import type { ExportPresetId, MediaItem } from '@videodip/media-engine';
-import type { ClipId, Milliseconds, ProjectId } from '@videodip/shared';
+import type { ClipId, Milliseconds, ProjectId, TransitionId } from '@videodip/shared';
 import { ms } from '@videodip/shared';
 import { create } from 'zustand';
 
@@ -37,6 +37,9 @@ export type SidebarPanel =
  */
 export type AspectRatio = '9:16' | '3:4' | '4:5' | '16:9';
 
+/** Filmora-style panel arrangements optimized for wide or vertical editing. */
+export type WorkspaceLayout = 'video' | 'short-video';
+
 /** Right inspector tabs. */
 export type InspectorTab =
   | 'properties'
@@ -60,6 +63,7 @@ export interface EditorState {
   readonly sidebarCollapsed: boolean;
   readonly inspectorTab: InspectorTab;
   readonly inspectorCollapsed: boolean;
+  readonly workspaceLayout: WorkspaceLayout;
 
   // --- Transport ---
   readonly isPlaying: boolean;
@@ -87,6 +91,8 @@ export interface EditorState {
    * its own.
    */
   readonly selectedClipId: ClipId | null;
+  /** The transition cut currently edited in the Effects inspector. */
+  readonly selectedTransitionId: TransitionId | null;
 
   // --- Project ---
   /** Null until a project is created or loaded. */
@@ -112,6 +118,8 @@ export interface EditorState {
   readonly toggleSidebar: () => void;
   readonly setInspectorTab: (tab: InspectorTab) => void;
   readonly toggleInspector: () => void;
+  /** Applies a complete panel arrangement without editing project content. */
+  readonly setWorkspaceLayout: (layout: WorkspaceLayout) => void;
   readonly play: () => void;
   readonly pause: () => void;
   readonly togglePlayback: () => void;
@@ -127,6 +135,7 @@ export interface EditorState {
   readonly setAspectRatio: (ratio: AspectRatio) => void;
   readonly setExportPreset: (id: ExportPresetId) => void;
   readonly selectClip: (clipId: ClipId | null) => void;
+  readonly selectTransition: (transitionId: TransitionId | null) => void;
   readonly addMediaItems: (items: readonly MediaItem[]) => void;
   /** Marks the in-memory project as changed since its last persisted state. */
   readonly markDirty: () => void;
@@ -161,6 +170,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   sidebarCollapsed: false,
   inspectorTab: 'properties',
   inspectorCollapsed: false,
+  workspaceLayout: 'short-video',
 
   isPlaying: false,
   playhead: ms(0),
@@ -173,6 +183,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   exportPresetId: 'tiktok-vertical',
 
   selectedClipId: null,
+  selectedTransitionId: null,
 
   projectId: null,
   projectName: null,
@@ -195,6 +206,13 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   setInspectorTab: (inspectorTab) => set({ inspectorTab, inspectorCollapsed: false }),
 
   toggleInspector: () => set((state) => ({ inspectorCollapsed: !state.inspectorCollapsed })),
+
+  setWorkspaceLayout: (workspaceLayout) =>
+    set({
+      workspaceLayout,
+      sidebarCollapsed: false,
+      inspectorCollapsed: false,
+    }),
 
   play: () => set({ isPlaying: true }),
   pause: () => set({ isPlaying: false }),
@@ -231,7 +249,12 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     ),
   setExportPreset: (exportPresetId) => set({ exportPresetId }),
 
-  selectClip: (selectedClipId) => set({ selectedClipId }),
+  selectClip: (selectedClipId) => set({ selectedClipId, selectedTransitionId: null }),
+  selectTransition: (selectedTransitionId) =>
+    set({
+      selectedTransitionId,
+      ...(selectedTransitionId === null ? {} : { selectedClipId: null }),
+    }),
 
   addMediaItems: (items) => {
     if (items.length === 0) return;
@@ -268,6 +291,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       isDirty: true,
       editRevision: state.editRevision + 1,
       selectedClipId: null,
+      selectedTransitionId: null,
       mediaItems: [],
     }));
   },
@@ -280,6 +304,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       aspectRatio: project.aspectRatio,
       mediaItems: project.mediaItems,
       selectedClipId: null,
+      selectedTransitionId: null,
       isPlaying: false,
       playhead: ms(0),
       isDirty: false,

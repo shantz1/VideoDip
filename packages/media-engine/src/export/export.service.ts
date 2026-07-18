@@ -8,6 +8,15 @@ import type { ExportClip, ExportSettings } from './export.types.js';
  */
 const AUDIO_SAMPLE_RATE = 48_000;
 
+const FFMPEG_TRANSITIONS: Readonly<Record<string, string>> = {
+  crossfade: 'fade',
+  'dip-to-black': 'fadeblack',
+  'slide-left': 'slideleft',
+  'slide-right': 'slideright',
+  'wipe-left': 'wipeleft',
+  'wipe-right': 'wiperight',
+};
+
 /**
  * The export's total output duration: the sum of clip durations.
  *
@@ -93,6 +102,34 @@ export function buildExportArgs(
       ),
     );
   }
+  for (const [index, clip] of clips.entries()) {
+    const transition = clip.transitionToNext;
+    if (!transition) continue;
+    const next = clips[index + 1];
+    if (
+      !next ||
+      !Number.isFinite(transition.duration) ||
+      transition.duration <= 0 ||
+      transition.duration > Math.min(clip.duration, next.duration)
+    ) {
+      return err(
+        appError(
+          'VALIDATION',
+          'An export transition does not fit its adjacent clips.',
+          'Shorten or remove the transition, then export again.',
+        ),
+      );
+    }
+    if (!FFMPEG_TRANSITIONS[transition.kind]) {
+      return err(
+        appError(
+          'UNSUPPORTED',
+          `The native exporter cannot render transition "${transition.kind}".`,
+          'Choose a built-in transition or use a plugin-capable headless renderer.',
+        ),
+      );
+    }
+  }
   const { width, height, fps } = settings;
   if (
     !Number.isInteger(width) ||
@@ -132,19 +169,31 @@ export function buildExportArgs(
 
   const segments = clips.map((clip, i) => {
     const start = seconds(clip.sourceStart);
-    const end = seconds((clip.sourceStart + clip.duration) as Milliseconds);
+    const transitionDuration = clip.transitionToNext?.duration ?? (0 as Milliseconds);
+    const renderDuration = (clip.duration + transitionDuration) as Milliseconds;
+    const end = seconds((clip.sourceStart + renderDuration) as Milliseconds);
+    const videoExtension =
+      transitionDuration > 0
+        ? `,tpad=stop_mode=clone:stop_duration=${seconds(transitionDuration)},trim=duration=${seconds(renderDuration)},setpts=PTS-STARTPTS`
+        : '';
+    const audioExtension =
+      transitionDuration > 0
+        ? `,apad=pad_dur=${seconds(transitionDuration)},atrim=duration=${seconds(renderDuration)},asetpts=PTS-STARTPTS`
+        : '';
     const angle = (clip.transform.rotation * Math.PI) / 180;
     const x = `(W-w)/2+${clip.transform.positionX}*W`;
     const y = `(H-h)/2+${clip.transform.positionY}*H`;
     const video =
-      `color=c=black:s=${width}x${height}:r=${fps}:d=${seconds(clip.duration)}[base${i}];` +
+      `color=c=black:s=${width}x${height}:r=${fps}:d=${seconds(renderDuration)}[base${i}];` +
       `[${i}:v]trim=start=${start}:end=${end},setpts=PTS-STARTPTS,` +
+      `${videoExtension ? videoExtension.slice(1) + ',' : ''}` +
       `scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
       `scale=w='max(2,trunc(iw*${clip.transform.scaleX}/2)*2)':` +
       `h='max(2,trunc(ih*${clip.transform.scaleY}/2)*2)',` +
       `rotate=${angle}:ow=rotw(iw):oh=roth(ih):c=none,format=rgba,` +
       `colorchannelmixer=aa=${clip.opacity}[fg${i}];` +
-      `[base${i}][fg${i}]overlay=x='${x}':y='${y}':shortest=1,setsar=1,fps=${fps}[v${i}]`;
+      `[base${i}][fg${i}]overlay=x='${x}':y='${y}':shortest=1,setsar=1,` +
+      `fps=${fps},settb=1/${fps},setpts=PTS-STARTPTS[v${i}]`;
     const volume = clip.audio.isMuted ? 0 : clip.audio.volume;
     const fadeIn = clip.audio.fadeIn > 0 ? `,afade=t=in:st=0:d=${seconds(clip.audio.fadeIn)}` : '';
     const fadeOut =
@@ -153,13 +202,13 @@ export function buildExportArgs(
         : '';
     const audio =
       `[${i}:a]atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS,` +
+      `${audioExtension ? audioExtension.slice(1) + ',' : ''}` +
       `aresample=${AUDIO_SAMPLE_RATE},volume=${volume}${fadeIn}${fadeOut}[a${i}]`;
     return `${video};${audio}`;
   });
 
-  const concatInputs = clips.map((_, i) => `[v${i}][a${i}]`).join('');
-  const filterGraph =
-    `${segments.join(';')};` + `${concatInputs}concat=n=${clips.length}:v=1:a=1[v][a]`;
+  const joinGraph = buildJoinGraph(clips);
+  const filterGraph = `${segments.join(';')};${joinGraph}`;
 
   return ok([
     // Machine-readable progress on stdout for the spawning side; no tty stats.
@@ -191,4 +240,40 @@ export function buildExportArgs(
     '-y',
     settings.outputPath,
   ]);
+}
+
+function buildJoinGraph(clips: readonly ExportClip[]): string {
+  if (!clips.some((clip) => clip.transitionToNext)) {
+    const concatInputs = clips.map((_, index) => `[v${index}][a${index}]`).join('');
+    return `${concatInputs}concat=n=${clips.length}:v=1:a=1[v][a]`;
+  }
+
+  const operations: string[] = [];
+  let currentVideo = 'v0';
+  let currentAudio = 'a0';
+  let cumulativeDuration = clips[0]?.duration ?? (0 as Milliseconds);
+  for (let index = 0; index < clips.length - 1; index += 1) {
+    const clip = clips[index];
+    const nextIndex = index + 1;
+    if (!clip) continue;
+    const isLast = nextIndex === clips.length - 1;
+    const outputVideo = isLast ? 'v' : `vj${nextIndex}`;
+    const outputAudio = isLast ? 'a' : `aj${nextIndex}`;
+    const transition = clip.transitionToNext;
+    if (transition) {
+      const ffmpegKind = FFMPEG_TRANSITIONS[transition.kind] ?? 'fade';
+      operations.push(
+        `[${currentVideo}][v${nextIndex}]xfade=transition=${ffmpegKind}:duration=${seconds(transition.duration)}:offset=${seconds(cumulativeDuration)}[${outputVideo}]`,
+        `[${currentAudio}][a${nextIndex}]acrossfade=d=${seconds(transition.duration)}:c1=tri:c2=tri[${outputAudio}]`,
+      );
+    } else {
+      operations.push(
+        `[${currentVideo}][${currentAudio}][v${nextIndex}][a${nextIndex}]concat=n=2:v=1:a=1[${outputVideo}][${outputAudio}]`,
+      );
+    }
+    currentVideo = outputVideo;
+    currentAudio = outputAudio;
+    cumulativeDuration = (cumulativeDuration + (clips[nextIndex]?.duration ?? 0)) as Milliseconds;
+  }
+  return operations.join(';');
 }

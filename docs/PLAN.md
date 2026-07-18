@@ -49,21 +49,26 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
 
 ## Done (this session, 2026-07-17)
 
-- **Visible canvas layout switcher (2026-07-18)** — added a compact top-toolbar
-  selector for Reel/Short 9:16, horizontal YouTube/video 16:9, social portrait
-  4:5 and classic portrait 3:4. It updates the existing persisted project
-  aspect ratio shared by preview and export, and registers Ctrl+Shift+R through
-  the central shortcut registry. Verified by the new toolbar interaction test,
-  all 25 workspace tasks (309 TypeScript tests), and an optimized desktop build.
+- **Filmora-style editor workspace layouts (2026-07-18)** — added top-toolbar
+  Video Editing and Short Video presets that rearrange the complete editor:
+  standard video gets a full-width lower timeline, while short-video editing
+  keeps both side panels beside a compact center timeline. Workspace choice is
+  deliberately independent from the persisted project aspect ratio, does not
+  create an autosave revision, and registers Ctrl/Cmd+Shift+L through the
+  central shortcut registry. Verified by pure grid mapping, store, toolbar and
+  shortcut tests plus all 25 workspace tasks (315 TypeScript tests).
 
 - **Local multilingual AI subtitles (2026-07-18)** — accepted ADR-0007 and
   implemented the Windows CPU whisper.cpp sidecar path, verified runtime/model
   downloads, real progress and cancellation, injected provider/model ports,
   trimmed-clip timestamp mapping, automatic subtitle timeline insertion, all
   99 supported language choices, global/per-cue colors, and reusable caption
-  entrance animations. Cross-language accuracy fixtures and non-Windows/GPU
-  distribution remain queued. Verified with all 25 workspace tasks (309
-  TypeScript tests), 16 Rust tests, an optimized Next build, the pinned runtime
+  entrance animations. The later 15% generation stall is fixed: the Rust host
+  now streams whisper.cpp's carriage-return progress updates immediately, and
+  its full-JSON parser accepts zero-length control tokens while retaining strict
+  timing for real segments. Cross-language accuracy fixtures and non-Windows/GPU
+  distribution remain queued. Verified with all 25 workspace tasks (315
+  TypeScript tests), 17 Rust tests, an optimized Next build, the pinned runtime
   provisioning command, and an isolated Tauri build containing the sidecar and
   its runtime DLLs.
 

@@ -26,12 +26,14 @@ export function SubtitleEditor() {
   const setDefaultStyle = useSubtitleStore((state) => state.setDefaultStyle);
   const playhead = useEditorStore((state) => state.playhead);
   const seek = useEditorStore((state) => state.seek);
+  const selectClip = useEditorStore((state) => state.selectClip);
   const [format, setFormat] = useState<SubtitleFormat>('srt');
   const [interchangeText, setInterchangeText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const selected = document.segments.find((segment) => segment.id === selectedId);
 
   const addCue = () => {
+    selectClip(null);
     const start = findFreeCueStart(document.segments, playhead, 2000);
     const result = add({ start: ms(start), end: ms(start + 2000), text: 'New subtitle' });
     setError(result.ok ? null : result.error.recovery);
@@ -132,6 +134,7 @@ export function SubtitleEditor() {
                 <button
                   type="button"
                   onClick={() => {
+                    selectClip(null);
                     select(segment.id);
                     seek(segment.start);
                   }}

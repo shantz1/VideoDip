@@ -22,18 +22,27 @@ const modelSchema = z.object({
   installed: z.boolean(),
 });
 const statusSchema = z.object({ runtimeAvailable: z.boolean(), models: z.array(modelSchema) });
-const offsetsSchema = z.object({ from: z.number().nonnegative(), to: z.number().positive() });
+const segmentOffsetsSchema = z.object({
+  from: z.number().nonnegative(),
+  to: z.number().positive(),
+});
+// whisper.cpp emits zero-length offsets for control tokens such as [_BEG_].
+// They are valid native output and are discarded later by `tokensToWords`.
+const tokenOffsetsSchema = z.object({
+  from: z.number().nonnegative(),
+  to: z.number().nonnegative(),
+});
 const outputSchema = z.object({
   result: z.object({ language: z.string().min(1) }),
   transcription: z.array(
     z.object({
-      offsets: offsetsSchema,
+      offsets: segmentOffsetsSchema,
       text: z.string(),
       tokens: z
         .array(
           z.object({
             text: z.string(),
-            offsets: offsetsSchema.optional(),
+            offsets: tokenOffsetsSchema.optional(),
             p: z.number().optional(),
           }),
         )
@@ -159,10 +168,17 @@ export function createWhisperIntegration(
   let selectedModel = 'small-q5_1';
   const failure = (message: string, cause: unknown): Result<never> =>
     err(
-      appError('PROCESS_FAILED', message, 'Check the AI runtime and model, then retry.', {
-        cause,
-        retryable: true,
-      }),
+      appError(
+        'PROCESS_FAILED',
+        message,
+        typeof cause === 'string' && cause.trim().length > 0
+          ? cause
+          : 'Check the AI runtime and model, then retry.',
+        {
+          cause,
+          retryable: true,
+        },
+      ),
     );
   const status = async (): Promise<
     Result<{ runtimeAvailable: boolean; models: TranscriptionModelStatus[] }>

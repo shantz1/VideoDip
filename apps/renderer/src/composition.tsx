@@ -4,6 +4,16 @@ import { z } from 'zod';
 
 const positiveInteger = z.number().int().positive();
 
+const compositionTransitionSchema = z.object({
+  id: z.string().min(1),
+  kind: z.string().min(1).max(128),
+  durationInFrames: positiveInteger,
+  parameters: z.record(
+    z.string().min(1).max(128),
+    z.union([z.string(), z.number().finite(), z.boolean(), z.null()]),
+  ),
+});
+
 export const compositionClipSchema = z.object({
   id: z.string().min(1),
   trackKind: z.string().min(1),
@@ -38,6 +48,8 @@ export const compositionClipSchema = z.object({
     fadeInFrames: z.number().int().nonnegative(),
     fadeOutFrames: z.number().int().nonnegative(),
   }),
+  transitionIn: compositionTransitionSchema.nullable(),
+  transitionOut: compositionTransitionSchema.nullable(),
 });
 
 export const compositionSettingsSchema = z.object({
@@ -125,6 +137,18 @@ export interface CompositionClip {
     readonly fadeInFrames: number;
     readonly fadeOutFrames: number;
   };
+  /** Transition entering this clip from its adjacent predecessor. */
+  readonly transitionIn: CompositionTransition | null;
+  /** Transition leaving this clip for its adjacent successor. */
+  readonly transitionOut: CompositionTransition | null;
+}
+
+/** Serializable transition relation resolved onto both composition endpoints. */
+export interface CompositionTransition {
+  readonly id: string;
+  readonly kind: string;
+  readonly durationInFrames: number;
+  readonly parameters: Readonly<Record<string, string | number | boolean | null>>;
 }
 
 /** Frame-based keyframe consumed by the headless-safe composition boundary. */
@@ -203,7 +227,11 @@ export function VideoDipComposition({ clips, subtitles }: VideoDipCompositionPro
       {clips
         .filter((clip) => clip.isEnabled)
         .map((clip) => (
-          <Sequence key={clip.id} from={clip.startFrame} durationInFrames={clip.durationInFrames}>
+          <Sequence
+            key={clip.id}
+            from={clip.startFrame}
+            durationInFrames={clip.durationInFrames + (clip.transitionOut?.durationInFrames ?? 0)}
+          >
             <RenderedClip clip={clip} />
           </Sequence>
         ))}
@@ -290,6 +318,7 @@ function RenderedClip({ clip }: { readonly clip: CompositionClip }) {
   const scaleY = animatedValue(clip, 'scaleY', frame, clip.transform.scaleY);
   const rotation = animatedValue(clip, 'rotation', frame, clip.transform.rotation);
   const opacity = animatedValue(clip, 'opacity', frame, clip.opacity);
+  const transition = transitionVisualState(clip, frame);
   return (
     <Video
       src={clip.src}
@@ -298,9 +327,10 @@ function RenderedClip({ clip }: { readonly clip: CompositionClip }) {
         height: '100%',
         width: '100%',
         objectFit: 'contain',
-        opacity,
+        opacity: opacity * transition.opacity,
         mixBlendMode: clip.blendMode,
-        transform: `translate(${positionX * 100}%, ${positionY * 100}%) rotate(${rotation}deg) scale(${scaleX}, ${scaleY})`,
+        clipPath: transition.clipPath,
+        transform: `translate(${positionX * 100}%, ${positionY * 100}%) translateX(${transition.translateX}%) rotate(${rotation}deg) scale(${scaleX}, ${scaleY})`,
       }}
     />
   );
@@ -312,7 +342,60 @@ function audioVolume(clip: CompositionClip, frame: number): number {
   const remaining = Math.max(0, clip.durationInFrames - frame);
   const fadeOut =
     clip.audio.fadeOutFrames > 0 ? Math.min(1, remaining / clip.audio.fadeOutFrames) : 1;
-  return clip.audio.volume * Math.min(fadeIn, fadeOut);
+  return clip.audio.volume * Math.min(fadeIn, fadeOut) * transitionAudioFactor(clip, frame);
+}
+
+interface TransitionVisualState {
+  readonly opacity: number;
+  readonly translateX: number;
+  readonly clipPath: string | undefined;
+}
+
+function transitionVisualState(clip: CompositionClip, frame: number): TransitionVisualState {
+  let opacity = 1;
+  let translateX = 0;
+  let clipPath: string | undefined;
+  const incoming = clip.transitionIn;
+  if (incoming) {
+    const progress = clamp01(frame / incoming.durationInFrames);
+    if (incoming.kind === 'dip-to-black') opacity *= clamp01((progress - 0.5) * 2);
+    else if (!isDirectionalTransition(incoming.kind)) opacity *= progress;
+    if (incoming.kind === 'slide-left') translateX += (1 - progress) * 100;
+    if (incoming.kind === 'slide-right') translateX -= (1 - progress) * 100;
+    if (incoming.kind === 'wipe-left') clipPath = `inset(0 ${(1 - progress) * 100}% 0 0)`;
+    if (incoming.kind === 'wipe-right') clipPath = `inset(0 0 0 ${(1 - progress) * 100}%)`;
+  }
+
+  const outgoing = clip.transitionOut;
+  if (outgoing) {
+    const startsAt = clip.durationInFrames;
+    const progress = clamp01((frame - startsAt) / outgoing.durationInFrames);
+    if (outgoing.kind === 'dip-to-black') opacity *= 1 - clamp01(progress * 2);
+    else if (!isDirectionalTransition(outgoing.kind)) opacity *= 1 - progress;
+    if (outgoing.kind === 'slide-left') translateX -= progress * 100;
+    if (outgoing.kind === 'slide-right') translateX += progress * 100;
+  }
+  return { opacity, translateX, clipPath };
+}
+
+function transitionAudioFactor(clip: CompositionClip, frame: number): number {
+  let factor = 1;
+  if (clip.transitionIn) {
+    factor *= clamp01(frame / clip.transitionIn.durationInFrames);
+  }
+  if (clip.transitionOut) {
+    const startsAt = clip.durationInFrames;
+    factor *= 1 - clamp01((frame - startsAt) / clip.transitionOut.durationInFrames);
+  }
+  return factor;
+}
+
+function isDirectionalTransition(kind: string): boolean {
+  return kind === 'slide-left' || kind === 'slide-right' || kind === 'wipe-left' || kind === 'wipe-right';
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
 }
 
 function animatedValue(

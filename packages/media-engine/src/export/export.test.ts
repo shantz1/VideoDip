@@ -19,6 +19,7 @@ const clip = (overrides: Partial<ExportClip> = {}): ExportClip => ({
   blendMode: 'normal',
   animation: [],
   audio: { volume: 1, isMuted: false, fadeIn: ms(0), fadeOut: ms(0) },
+  transitionToNext: null,
   ...overrides,
 });
 
@@ -111,12 +112,39 @@ describe('buildExportArgs', () => {
     expect(args).toContain('[a]');
   });
 
+  it('compiles adjacent transitions without shortening the project duration', () => {
+    const args = unwrap(
+      buildExportArgs(
+        [
+          clip({ transitionToNext: { kind: 'wipe-left', duration: ms(500) } }),
+          clip({ src: 'C:\\media\\b.mp4' }),
+        ],
+        SETTINGS,
+      ),
+    );
+    const graph = args[args.indexOf('-filter_complex') + 1];
+    expect(graph).toContain('tpad=stop_mode=clone:stop_duration=0.5');
+    expect(graph).toContain('xfade=transition=wipeleft:duration=0.5:offset=5[v]');
+    expect(graph).toContain('acrossfade=d=0.5:c1=tri:c2=tri[a]');
+    expect(getExportDuration([clip(), clip()])).toBe(10_000);
+  });
+
+  it('rejects unsupported plugin transitions instead of exporting a visual lie', () => {
+    const result = buildExportArgs(
+      [clip({ transitionToNext: { kind: 'plugin:prism', duration: ms(500) } }), clip()],
+      SETTINGS,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('UNSUPPORTED');
+  });
+
   it('conforms video to the requested geometry and frame rate', () => {
     const args = unwrap(buildExportArgs([clip()], SETTINGS));
     const graph = args[args.indexOf('-filter_complex') + 1];
     expect(graph).toContain('scale=1080:1920');
     expect(graph).toContain('color=c=black:s=1080x1920');
     expect(graph).toContain('fps=30');
+    expect(graph).toContain('settb=1/30,setpts=PTS-STARTPTS');
   });
 
   it('compiles static transform, opacity, volume and fades into the graph', () => {

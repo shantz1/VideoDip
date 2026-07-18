@@ -34,7 +34,7 @@ const ASPECT_RATIO_CSS: Record<AspectRatio, string> = {
  */
 export function PreviewCanvas() {
   return (
-    <main className="bg-surface-sunken flex min-w-0 flex-1 flex-col">
+    <main className="bg-surface-sunken flex h-full min-w-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 items-center justify-center p-6">
         <Stage />
       </div>

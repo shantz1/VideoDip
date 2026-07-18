@@ -54,7 +54,7 @@ export function toExportClips(
     .sort((a, b) => a.start - b.start);
 
   const exportClips: ExportClip[] = [];
-  for (const clip of clips) {
+  for (const [index, clip] of clips.entries()) {
     const src = resolvePath(clip.assetId);
     if (src === undefined) {
       return err(
@@ -74,6 +74,15 @@ export function toExportClips(
       blendMode: clip.blendMode,
       animation: clip.animation,
       audio: clip.audio,
+      transitionToNext: (() => {
+        const next = clips[index + 1];
+        const transition = next
+          ? document.transitions.find(
+              (candidate) => candidate.fromClipId === clip.id && candidate.toClipId === next.id,
+            )
+          : undefined;
+        return transition ? { kind: transition.kind, duration: transition.duration } : null;
+      })(),
     });
   }
   return ok(exportClips);

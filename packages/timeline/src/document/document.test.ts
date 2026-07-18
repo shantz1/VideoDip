@@ -2,6 +2,7 @@ import { ms, normalized, type AssetId } from '@videodip/shared';
 import { describe, expect, it } from 'vitest';
 import {
   addClip,
+  addTransition,
   addTrack,
   createTimeline,
   createTrack,
@@ -11,12 +12,14 @@ import {
   moveClip,
   removeClip,
   removeTrack,
+  removeTransition,
   reorderTrack,
   setClipAnimation,
   splitClip,
   trimClip,
   updateClipProperties,
   updateClipAudio,
+  updateTransition,
 } from './document.service.js';
 import type { TrackId } from '@videodip/shared';
 
@@ -36,6 +39,7 @@ function createEmptyTimeline() {
 describe('generic tracks', () => {
   it('creates a timeline with no domain-defined tracks', () => {
     expect(createTimeline().tracks).toEqual([]);
+    expect(createTimeline().transitions).toEqual([]);
   });
 
   it('preserves arbitrary consumer-defined kinds and order', () => {
@@ -297,6 +301,148 @@ describe('updateClipProperties', () => {
 
     expect(result.ok).toBe(false);
     expect(document.tracks[0]?.clips[0]?.transform.scaleY).toBe(1);
+  });
+});
+
+describe('clip transitions', () => {
+  function adjacentClips() {
+    let document = createEmptyTimeline();
+    document = unwrap(
+      addClip(document, {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+      }),
+    );
+    document = unwrap(
+      addClip(document, {
+        trackId: VIDEO,
+        assetId: ASSET_B,
+        start: ms(1000),
+        duration: ms(2000),
+      }),
+    );
+    const [from, to] = document.tracks.find((track) => track.id === VIDEO)?.clips ?? [];
+    if (!from || !to) throw new Error('Expected adjacent clips.');
+    return { document, from, to };
+  }
+
+  it('joins adjacent clips with an open kind and plugin-safe parameters', () => {
+    const { document, from, to } = adjacentClips();
+    const transitioned = unwrap(
+      addTransition(document, {
+        fromClipId: from.id,
+        toClipId: to.id,
+        kind: 'plugin:prism',
+        duration: ms(500),
+        parameters: { facets: 6 },
+      }),
+    );
+
+    expect(transitioned.transitions[0]).toMatchObject({
+      trackId: VIDEO,
+      fromClipId: from.id,
+      toClipId: to.id,
+      kind: 'plugin:prism',
+      duration: 500,
+      parameters: { facets: 6 },
+    });
+  });
+
+  it('rejects gaps, duplicate cuts, and durations longer than either clip', () => {
+    const { document, from, to } = adjacentClips();
+    expect(
+      addTransition(document, {
+        fromClipId: from.id,
+        toClipId: to.id,
+        kind: 'crossfade',
+        duration: ms(1500),
+      }).ok,
+    ).toBe(false);
+
+    const moved = unwrap(moveClip(document, to.id, ms(1500)));
+    expect(
+      addTransition(moved, {
+        fromClipId: from.id,
+        toClipId: to.id,
+        kind: 'crossfade',
+        duration: ms(250),
+      }).ok,
+    ).toBe(false);
+
+    const first = unwrap(
+      addTransition(document, {
+        fromClipId: from.id,
+        toClipId: to.id,
+        kind: 'crossfade',
+        duration: ms(250),
+      }),
+    );
+    expect(
+      addTransition(first, {
+        fromClipId: from.id,
+        toClipId: to.id,
+        kind: 'wipe-left',
+        duration: ms(250),
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('updates and removes a transition as immutable operations', () => {
+    const { document, from, to } = adjacentClips();
+    const transitioned = unwrap(
+      addTransition(document, {
+        fromClipId: from.id,
+        toClipId: to.id,
+        kind: 'crossfade',
+        duration: ms(250),
+      }),
+    );
+    const transition = transitioned.transitions[0];
+    if (!transition) throw new Error('Expected a transition.');
+    const updated = unwrap(
+      updateTransition(transitioned, transition.id, {
+        kind: 'slide-left',
+        duration: ms(500),
+      }),
+    );
+    expect(updated.transitions[0]).toMatchObject({ kind: 'slide-left', duration: 500 });
+    expect(transitioned.transitions[0]).toMatchObject({ kind: 'crossfade', duration: 250 });
+    expect(removeTransition(updated, transition.id).transitions).toEqual([]);
+  });
+
+  it('drops a transition when an endpoint moves or is removed', () => {
+    const { document, from, to } = adjacentClips();
+    const transitioned = unwrap(
+      addTransition(document, {
+        fromClipId: from.id,
+        toClipId: to.id,
+        kind: 'crossfade',
+        duration: ms(250),
+      }),
+    );
+    expect(unwrap(moveClip(transitioned, to.id, ms(1500))).transitions).toEqual([]);
+    expect(removeClip(transitioned, from.id).transitions).toEqual([]);
+  });
+
+  it('clamps timing-preserving trims and follows the outgoing half of a split', () => {
+    const { document, from, to } = adjacentClips();
+    const transitioned = unwrap(
+      addTransition(document, {
+        fromClipId: from.id,
+        toClipId: to.id,
+        kind: 'crossfade',
+        duration: ms(800),
+      }),
+    );
+    const trimmed = unwrap(trimClip(transitioned, from.id, 'start', ms(500)));
+    expect(trimmed.transitions[0]?.duration).toBe(500);
+
+    const split = unwrap(splitClip(transitioned, from.id, ms(500)));
+    const clips = split.tracks.find((track) => track.id === VIDEO)?.clips ?? [];
+    expect(split.transitions[0]?.fromClipId).toBe(clips[1]?.id);
+    expect(split.transitions[0]?.toClipId).toBe(to.id);
   });
 });
 

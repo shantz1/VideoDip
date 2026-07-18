@@ -2,15 +2,18 @@
 
 import { ms, normalized, type TrackId } from '@videodip/shared';
 import {
+  CORE_TRANSITION_KINDS,
   DEFAULT_CLIP_TRANSFORM,
   type Clip,
   type ClipAnimationProperty,
   type ClipBlendMode,
   type ClipKeyframeEasing,
   type ClipTransform,
+  type ClipTransition,
+  type CoreTransitionKind,
 } from '@videodip/timeline';
 import { Button, cn } from '@videodip/ui';
-import { MousePointerClick, SlidersHorizontal } from 'lucide-react';
+import { MousePointerClick, SlidersHorizontal, Sparkles, Trash2 } from 'lucide-react';
 import { useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditorStore, type InspectorTab } from '../editor.store';
 import { useProjectStore } from '../project.store';
@@ -32,11 +35,15 @@ export function RightInspector() {
   const collapsed = useEditorStore((state) => state.inspectorCollapsed);
   const setTab = useEditorStore((state) => state.setInspectorTab);
   const selectedClipId = useEditorStore((state) => state.selectedClipId);
+  const selectedTransitionId = useEditorStore((state) => state.selectedTransitionId);
   const timelineDocument = useProjectStore((state) => state.document);
   const selectedClip = selectedClipId
     ? timelineDocument.tracks
         .flatMap((track) => track.clips)
         .find((clip) => clip.id === selectedClipId)
+    : undefined;
+  const selectedTransition = selectedTransitionId
+    ? timelineDocument.transitions.find((transition) => transition.id === selectedTransitionId)
     : undefined;
 
   if (collapsed) return null;
@@ -53,7 +60,7 @@ export function RightInspector() {
 
   return (
     <aside
-      className="border-border-subtle bg-surface-base flex w-72 shrink-0 flex-col border-l"
+      className="border-border-subtle bg-surface-base flex h-full w-72 shrink-0 flex-col border-l"
       aria-label="Inspector"
     >
       <div
@@ -96,6 +103,8 @@ export function RightInspector() {
       >
         {tab === 'subtitle' ? (
           <SubtitleEditor />
+        ) : tab === 'effects' && selectedTransition ? (
+          <TransitionControls transition={selectedTransition} />
         ) : !selectedClip ? (
           <EmptyState
             icon={MousePointerClick}
@@ -119,6 +128,108 @@ export function RightInspector() {
         )}
       </div>
     </aside>
+  );
+}
+
+const TRANSITION_LABELS: Readonly<Record<CoreTransitionKind, string>> = {
+  crossfade: 'Crossfade',
+  'dip-to-black': 'Dip to black',
+  'slide-left': 'Slide left',
+  'slide-right': 'Slide right',
+  'wipe-left': 'Wipe left',
+  'wipe-right': 'Wipe right',
+};
+
+function TransitionControls({ transition }: { readonly transition: ClipTransition }) {
+  const document = useProjectStore((state) => state.document);
+  const updateTransition = useProjectStore((state) => state.updateTransition);
+  const removeTransition = useProjectStore((state) => state.removeTransition);
+  const selectTransition = useEditorStore((state) => state.selectTransition);
+  const mediaItems = useEditorStore((state) => state.mediaItems);
+  const [error, setError] = useState<string | null>(null);
+  const clips = document.tracks.flatMap((track) => track.clips);
+  const from = clips.find((clip) => clip.id === transition.fromClipId);
+  const to = clips.find((clip) => clip.id === transition.toClipId);
+  const fromName = mediaItems.find((item) => item.id === from?.assetId)?.name ?? 'First clip';
+  const toName = mediaItems.find((item) => item.id === to?.assetId)?.name ?? 'Second clip';
+  const maximumDuration = Math.min(from?.duration ?? 0, to?.duration ?? 0);
+
+  const apply = (patch: Parameters<typeof updateTransition>[1]) => {
+    const result = updateTransition(transition.id, patch);
+    setError(result.ok ? null : result.error.recovery);
+  };
+
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      <div className="flex items-start gap-2">
+        <span className="bg-accent-subtle text-accent grid size-8 shrink-0 place-items-center rounded-md">
+          <Sparkles className="size-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-text-primary text-sm font-medium">Clip transition</p>
+          <p className="text-text-tertiary truncate text-xs" title={`${fromName} → ${toName}`}>
+            {fromName} → {toName}
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <p role="alert" className="bg-danger-subtle text-danger rounded-md px-2 py-1.5 text-xs">
+          {error}
+        </p>
+      )}
+
+      <InspectorField label="Style">
+        <select
+          value={transition.kind}
+          onChange={(event) => apply({ kind: event.currentTarget.value })}
+          className={controlClassName}
+        >
+          {!CORE_TRANSITION_KINDS.some((kind) => kind === transition.kind) && (
+            <option value={transition.kind}>{transition.kind} (plugin)</option>
+          )}
+          {CORE_TRANSITION_KINDS.map((kind) => (
+            <option key={kind} value={kind}>
+              {TRANSITION_LABELS[kind]}
+            </option>
+          ))}
+        </select>
+      </InspectorField>
+
+      <InspectorField label="Duration" suffix="s">
+        <input
+          key={`${transition.id}-${transition.duration}`}
+          type="number"
+          min="0.05"
+          max={maximumDuration / 1000}
+          step="0.05"
+          defaultValue={(transition.duration / 1000).toFixed(2)}
+          onBlur={(event) => {
+            const seconds = event.currentTarget.valueAsNumber;
+            if (Number.isFinite(seconds) && seconds > 0) {
+              apply({ duration: ms(Math.round(seconds * 1000)) });
+            }
+          }}
+          className={controlClassName}
+        />
+      </InspectorField>
+
+      <p className="text-text-tertiary text-xs">
+        The transition is stored on this cut and follows undo, autosave, preview, and export.
+      </p>
+
+      <Button
+        size="sm"
+        variant="danger"
+        leadingIcon={<Trash2 />}
+        onClick={() => {
+          removeTransition(transition.id);
+          selectTransition(null);
+        }}
+      >
+        Remove transition
+      </Button>
+    </div>
   );
 }
 

@@ -6,6 +6,7 @@ import {
   millisecondsSchema,
   normalizedSchema,
   projectIdSchema,
+  transitionIdSchema,
 } from './primitive.schema.js';
 
 describe('unit boundary schemas', () => {
@@ -29,6 +30,7 @@ describe('identifier boundary schemas', () => {
   it('trims and brands non-empty identifiers', () => {
     expect(projectIdSchema.parse('  project-a  ')).toBe('project-a');
     expect(mediaLocatorSchema.parse('  opfs://asset-a  ')).toBe('opfs://asset-a');
+    expect(transitionIdSchema.parse('  transition-a  ')).toBe('transition-a');
   });
 
   it('rejects empty identifiers', () => {

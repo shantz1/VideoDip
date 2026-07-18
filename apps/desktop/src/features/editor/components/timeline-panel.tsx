@@ -1,9 +1,9 @@
 'use client';
 
 import { ms, type Milliseconds } from '@videodip/shared';
-import { getDuration, type Clip, type TrimEdge } from '@videodip/timeline';
+import { getDuration, type Clip, type ClipTransition, type TrimEdge } from '@videodip/timeline';
 import { Button, cn } from '@videodip/ui';
-import { Magnet, Maximize2, Scissors, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Magnet, Maximize2, Plus, Scissors, Sparkles, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { useEditorStore } from '../editor.store';
 import {
@@ -44,7 +44,7 @@ export function TimelinePanel() {
 
   return (
     <section
-      className="border-border-subtle bg-surface-base flex h-64 shrink-0 flex-col border-t"
+      className="border-border-subtle bg-surface-base flex h-full shrink-0 flex-col border-t"
       aria-label="Timeline"
     >
       <TimelineToolbar viewportWidth={viewportWidth} />
@@ -64,10 +64,13 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
   const setZoom = useEditorStore((s) => s.setZoom);
   const toggleSnap = useEditorStore((s) => s.toggleSnap);
   const selectedClipId = useEditorStore((s) => s.selectedClipId);
+  const selectedTransitionId = useEditorStore((s) => s.selectedTransitionId);
   const selectClip = useEditorStore((s) => s.selectClip);
+  const selectTransition = useEditorStore((s) => s.selectTransition);
   const playhead = useEditorStore((s) => s.playhead);
   const document = useProjectStore((s) => s.document);
   const removeClip = useProjectStore((s) => s.removeClip);
+  const removeTransition = useProjectStore((s) => s.removeTransition);
   const splitClip = useProjectStore((s) => s.splitClip);
   const selectedSubtitleId = useSubtitleStore((state) => state.selectedSegmentId);
   const subtitleDocument = useSubtitleStore((state) => state.document);
@@ -102,6 +105,9 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
     if (selectedClipId) {
       removeClip(selectedClipId);
       selectClip(null);
+    } else if (selectedTransitionId) {
+      removeTransition(selectedTransitionId);
+      selectTransition(null);
     } else if (selectedSubtitleId) {
       removeSubtitle(selectedSubtitleId);
       selectSubtitle(null);
@@ -129,8 +135,8 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
       <Button
         size="icon-sm"
         variant="ghost"
-        aria-label="Delete clip"
-        disabled={!selectedClipId && !selectedSubtitleId}
+        aria-label="Delete selected timeline item"
+        disabled={!selectedClipId && !selectedTransitionId && !selectedSubtitleId}
         onClick={handleDelete}
         leadingIcon={<Trash2 />}
       />
@@ -213,12 +219,15 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
   const playhead = useEditorStore((s) => s.playhead);
   const seek = useEditorStore((s) => s.seek);
   const selectedClipId = useEditorStore((s) => s.selectedClipId);
+  const selectedTransitionId = useEditorStore((s) => s.selectedTransitionId);
   const selectClip = useEditorStore((s) => s.selectClip);
+  const selectTransition = useEditorStore((s) => s.selectTransition);
   const mediaItems = useEditorStore((s) => s.mediaItems);
   const projectDocument = useProjectStore((s) => s.document);
   const moveClip = useProjectStore((s) => s.moveClip);
   const trimClip = useProjectStore((s) => s.trimClip);
   const splitClip = useProjectStore((s) => s.splitClip);
+  const addTransition = useProjectStore((s) => s.addTransition);
   const subtitleDocument = useSubtitleStore((state) => state.document);
   const selectedSubtitleId = useSubtitleStore((state) => state.selectedSegmentId);
   const selectSubtitle = useSubtitleStore((state) => state.select);
@@ -325,10 +334,11 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
 
         {projectDocument.tracks.map((track) => {
           const color = trackColorClass(track.kind);
+          const orderedClips = [...track.clips].sort((left, right) => left.start - right.start);
           return (
             <div
               key={track.id}
-              className="border-border-subtle relative border-b"
+              className="group/track border-border-subtle relative border-b"
               style={{
                 height: TRACK_HEIGHT,
                 // Vertical grid every second, drawn in CSS rather than as
@@ -337,7 +347,7 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
                 backgroundImage: `repeating-linear-gradient(to right, var(--color-timeline-grid) 0 1px, transparent 1px ${zoom}px)`,
               }}
             >
-              {track.clips.map((clip) => (
+              {orderedClips.map((clip) => (
                 <TimelineClip
                   key={clip.id}
                   label={mediaNameFor(clip.assetId)}
@@ -358,6 +368,52 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
                   }}
                 />
               ))}
+              {orderedClips.slice(0, -1).map((from, index) => {
+                const to = orderedClips[index + 1];
+                if (!to || from.start + from.duration !== to.start) return null;
+                const fromMedia = mediaItems.find((item) => item.id === from.assetId);
+                const toMedia = mediaItems.find((item) => item.id === to.assetId);
+                if (fromMedia?.kind !== 'video' || toMedia?.kind !== 'video') return null;
+                const transition = projectDocument.transitions.find(
+                  (candidate) => candidate.fromClipId === from.id && candidate.toClipId === to.id,
+                );
+                return (
+                  <TimelineTransitionControl
+                    key={`${from.id}:${to.id}`}
+                    from={from}
+                    to={to}
+                    transition={transition}
+                    zoom={zoom}
+                    selected={transition?.id === selectedTransitionId}
+                    onActivate={() => {
+                      if (transition) {
+                        selectTransition(transition.id);
+                        selectSubtitle(null);
+                        setInspectorTab('effects');
+                        return;
+                      }
+                      const result = addTransition({
+                        fromClipId: from.id,
+                        toClipId: to.id,
+                        kind: 'crossfade',
+                        duration: ms(Math.min(500, from.duration, to.duration)),
+                      });
+                      setEditError(result.ok ? null : result.error.recovery);
+                      const added = result.ok
+                        ? result.value.transitions.find(
+                            (candidate) =>
+                              candidate.fromClipId === from.id && candidate.toClipId === to.id,
+                          )
+                        : undefined;
+                      if (added) {
+                        selectTransition(added.id);
+                        selectSubtitle(null);
+                        setInspectorTab('effects');
+                      }
+                    }}
+                  />
+                );
+              })}
               {track.kind === 'subtitle' &&
                 subtitleDocument.segments.map((segment) => (
                   <TimelineSubtitleCue
@@ -385,6 +441,50 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
         />
       </div>
     </div>
+  );
+}
+
+function TimelineTransitionControl({
+  from,
+  to,
+  transition,
+  zoom,
+  selected,
+  onActivate,
+}: {
+  readonly from: Clip;
+  readonly to: Clip;
+  readonly transition: ClipTransition | undefined;
+  readonly zoom: number;
+  readonly selected: boolean;
+  readonly onActivate: () => void;
+}) {
+  const duration = transition?.duration ?? ms(250);
+  const width = Math.max(18, (duration / 1000) * zoom);
+  const Icon = transition ? Sparkles : Plus;
+  return (
+    <button
+      type="button"
+      aria-label={
+        transition ? `Edit ${transition.kind} transition` : 'Add transition between adjacent clips'
+      }
+      title={transition ? `Edit ${transition.kind} transition` : 'Add transition'}
+      onClick={onActivate}
+      className={cn(
+        'absolute top-1/2 z-20 flex h-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-sm border',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[--color-border-focus]',
+        transition
+          ? 'border-accent bg-accent-subtle text-accent'
+          : 'border-border-default bg-surface-overlay text-text-secondary opacity-0 group-hover/track:opacity-100 focus-visible:opacity-100',
+        selected && 'ring-offset-surface-base ring-2 ring-[--color-border-focus] ring-offset-1',
+      )}
+      style={{ left: ((from.start + from.duration) / 1000) * zoom, width }}
+    >
+      <Icon className="size-3" aria-hidden="true" />
+      <span className="sr-only">
+        {from.id} to {to.id}
+      </span>
+    </button>
   );
 }
 

@@ -56,6 +56,44 @@ describe('projectSnapshotSchema', () => {
       audio: { volume: 1, isMuted: false, fadeIn: 0, fadeOut: 0 },
     });
     expect(result.subtitles).toMatchObject({ version: 1, language: null, segments: [] });
+    expect(result.timeline.transitions).toEqual([]);
+  });
+
+  it('persists valid adjacent-clip transitions and rejects dangling cuts', () => {
+    const first = SNAPSHOT.timeline.tracks[0].clips[0];
+    const second = {
+      ...first,
+      id: 'clip-b',
+      assetId: 'asset-b',
+      start: 1000,
+    };
+    const tracks = [{ ...SNAPSHOT.timeline.tracks[0], clips: [first, second] }];
+    const mediaItems = [
+      ...SNAPSHOT.mediaItems,
+      { ...SNAPSHOT.mediaItems[0], id: 'asset-b', locator: 'opaque:asset-b' },
+    ];
+    const transition = {
+      id: 'transition-a',
+      trackId: 'video',
+      fromClipId: 'clip-a',
+      toClipId: 'clip-b',
+      kind: 'crossfade',
+      duration: 500,
+    };
+    expect(
+      projectSnapshotSchema.safeParse({
+        ...SNAPSHOT,
+        timeline: { tracks, transitions: [transition] },
+        mediaItems,
+      }).success,
+    ).toBe(true);
+    expect(
+      projectSnapshotSchema.safeParse({
+        ...SNAPSHOT,
+        timeline: { tracks, transitions: [{ ...transition, toClipId: 'missing' }] },
+        mediaItems,
+      }).success,
+    ).toBe(false);
   });
 
   it('validates persisted subtitle timing and word boundaries', () => {

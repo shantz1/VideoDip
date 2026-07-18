@@ -1,0 +1,3 @@
+# Owned and rewritten by Next.js on every dev/build run; its quote style is
+# not ours to enforce ("This file should not be edited").
+apps/desktop/next-env.d.ts

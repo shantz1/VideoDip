@@ -1,5 +1,5 @@
 import { ms, type AssetId, type TrackId } from '@videodip/shared';
-import { addClip, createTimeline, createTrack } from '@videodip/timeline';
+import { addClip, addTransition, createTimeline, createTrack } from '@videodip/timeline';
 import { describe, expect, it } from 'vitest';
 import { addSubtitleSegment, createSubtitleDocument } from '@videodip/subtitle-engine';
 import { toCompositionClips, toCompositionSubtitles } from './composition-adapter';
@@ -120,6 +120,43 @@ describe('toCompositionClips', () => {
     expect(clips.map((clip) => clip.trackKind)).toEqual(['video', 'plugin:overlay']);
     expect(clips.map((clip) => clip.mediaKind)).toEqual(['video', 'video']);
   });
+
+  it('resolves one transition onto both adjacent composition endpoints', () => {
+    let document = createEmptyTimeline();
+    document = unwrapTimeline(
+      addClip(document, {
+        trackId: VIDEO,
+        assetId: 'asset-a' as AssetId,
+        start: ms(0),
+        duration: ms(1000),
+      }),
+    );
+    document = unwrapTimeline(
+      addClip(document, {
+        trackId: VIDEO,
+        assetId: 'asset-b' as AssetId,
+        start: ms(1000),
+        duration: ms(1000),
+      }),
+    );
+    const [from, to] = document.tracks.find((track) => track.id === VIDEO)?.clips ?? [];
+    if (!from || !to) throw new Error('Expected adjacent clips.');
+    document = unwrapTimeline(
+      addTransition(document, {
+        fromClipId: from.id,
+        toClipId: to.id,
+        kind: 'wipe-left',
+        duration: ms(500),
+      }),
+    );
+
+    const clips = toCompositionClips(document, (assetId) => ({
+      src: String(assetId),
+      mediaKind: 'video',
+    }));
+    expect(clips[0]?.transitionOut).toMatchObject({ kind: 'wipe-left', durationInFrames: 15 });
+    expect(clips[1]?.transitionIn).toEqual(clips[0]?.transitionOut);
+  });
 });
 
 describe('toCompositionSubtitles', () => {
@@ -146,3 +183,8 @@ describe('toCompositionSubtitles', () => {
     });
   });
 });
+
+function unwrapTimeline<T>(result: import('@videodip/shared').Result<T>): T {
+  if (!result.ok) throw new Error(result.error.message);
+  return result.value;
+}

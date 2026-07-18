@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('remotion', () => ({
   AbsoluteFill: ({ children }: { children: ReactNode }) => <main>{children}</main>,
-  Sequence: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+  Sequence: ({ children, durationInFrames }: { children: ReactNode; durationInFrames: number }) => (
+    <section data-duration={durationInFrames}>{children}</section>
+  ),
   Audio: ({ src }: { src: string }) => <span data-media="audio" data-src={src} />,
   Video: ({ src, style }: { src: string; style?: unknown }) => (
     <span data-media="video" data-src={src} data-style={JSON.stringify(style)} />
@@ -41,6 +43,8 @@ const clip = (overrides: Partial<CompositionClip> = {}): CompositionClip => ({
   isEnabled: true,
   animation: [],
   audio: { volume: 1, isMuted: false, fadeInFrames: 0, fadeOutFrames: 0 },
+  transitionIn: null,
+  transitionOut: null,
   ...overrides,
 });
 
@@ -130,6 +134,35 @@ describe('VideoDip composition contract', () => {
             audio: { volume: 0.5, isMuted: false, fadeInFrames: 5, fadeOutFrames: 10 },
           }),
         ],
+        subtitles: [],
+        settings: SETTINGS,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('extends the outgoing sequence and fades the incoming clip at a transition cut', () => {
+    const transition = {
+      id: 'transition-a',
+      kind: 'crossfade',
+      durationInFrames: 15,
+      parameters: {},
+    };
+    const markup = renderToStaticMarkup(
+      <VideoDipComposition
+        clips={[
+          clip({ id: 'outgoing', transitionOut: transition }),
+          clip({ id: 'incoming', startFrame: 30, transitionIn: transition }),
+        ]}
+        subtitles={[]}
+        settings={SETTINGS}
+      />,
+    );
+
+    expect(markup).toContain('data-duration="45"');
+    expect(markup).toContain('&quot;opacity&quot;:0');
+    expect(
+      videoDipCompositionSchema.safeParse({
+        clips: [clip({ transitionOut: transition })],
         subtitles: [],
         settings: SETTINGS,
       }).success,

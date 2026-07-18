@@ -89,7 +89,7 @@ export function LeftSidebar() {
   const active = PANELS.find((p) => p.id === activePanel);
 
   return (
-    <div className="flex shrink-0">
+    <div className="flex h-full shrink-0">
       <nav
         className={cn(
           'flex w-12 flex-col items-center gap-0.5 py-2',

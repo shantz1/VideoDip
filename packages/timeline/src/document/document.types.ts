@@ -1,4 +1,11 @@
-import type { AssetId, ClipId, Milliseconds, Normalized, TrackId } from '@videodip/shared';
+import type {
+  AssetId,
+  ClipId,
+  Milliseconds,
+  Normalized,
+  TrackId,
+  TransitionId,
+} from '@videodip/shared';
 
 /**
  * Open track classification metadata.
@@ -24,6 +31,35 @@ export interface ClipTransform {
 
 /** Flat JSON metadata available to plugins without owning core clip fields. */
 export type ClipMetadata = Readonly<Record<string, string | number | boolean | null>>;
+
+/** Open transition identifier; built-ins and plugins share this field. */
+export type TransitionKind = string;
+
+/** Core transitions previewed and exported without a plugin runtime. */
+export type CoreTransitionKind =
+  | 'crossfade'
+  | 'dip-to-black'
+  | 'slide-left'
+  | 'slide-right'
+  | 'wipe-left'
+  | 'wipe-right';
+
+/**
+ * An effect joining two adjacent clips on the same generic track.
+ *
+ * The relation lives at document level instead of on either clip: moving,
+ * deleting, or replacing one endpoint can then invalidate it explicitly,
+ * while plugin-defined kinds and parameters do not change the clip model.
+ */
+export interface ClipTransition {
+  readonly id: TransitionId;
+  readonly trackId: TrackId;
+  readonly fromClipId: ClipId;
+  readonly toClipId: ClipId;
+  readonly kind: TransitionKind;
+  readonly duration: Milliseconds;
+  readonly parameters: ClipMetadata;
+}
 
 /** Static clip fields that can be animated over clip-relative time. */
 export type ClipAnimationProperty = keyof ClipTransform | 'opacity';
@@ -90,4 +126,5 @@ export interface Track {
  */
 export interface TimelineDocument {
   readonly tracks: readonly Track[];
+  readonly transitions: readonly ClipTransition[];
 }

@@ -9,6 +9,7 @@ import {
   projectIdSchema,
   segmentIdSchema,
   trackIdSchema,
+  transitionIdSchema,
 } from './primitive.schema.js';
 
 /** Current on-disk project snapshot version. Increment only with a migration. */
@@ -174,6 +175,28 @@ const projectTrackSchema = z
     }
   });
 
+const projectTransitionSchema = z.strictObject({
+  id: transitionIdSchema,
+  trackId: trackIdSchema,
+  fromClipId: clipIdSchema,
+  toClipId: clipIdSchema,
+  kind: z.string().trim().min(1).max(128),
+  duration: millisecondsSchema.refine(
+    (duration) => duration > 0,
+    'Transition duration must be positive.',
+  ),
+  parameters: z
+    .record(
+      z.string().trim().min(1).max(128),
+      z.union([z.string(), z.number().finite(), z.boolean(), z.null()]),
+    )
+    .refine(
+      (parameters) => Object.keys(parameters).length <= 64,
+      'Transition parameters have too many keys.',
+    )
+    .default({}),
+});
+
 const subtitleStyleSchema = z.strictObject({
   fontFamily: z.string().trim().min(1).max(256).nullable(),
   fontSize: z.number().finite().positive().max(1000).nullable(),
@@ -292,7 +315,10 @@ export const projectSnapshotSchema = z
     id: projectIdSchema,
     name: z.string().trim().min(1).max(160),
     aspectRatio: projectAspectRatioSchema,
-    timeline: z.strictObject({ tracks: z.array(projectTrackSchema) }),
+    timeline: z.strictObject({
+      tracks: z.array(projectTrackSchema),
+      transitions: z.array(projectTransitionSchema).default([]),
+    }),
     mediaItems: z.array(projectMediaItemSchema),
     subtitles: projectSubtitleDocumentSchema.default(emptySubtitleDocument),
     createdAt: z.iso.datetime(),
@@ -301,6 +327,7 @@ export const projectSnapshotSchema = z
   .superRefine((project, context) => {
     const trackIds = new Set<string>();
     const clipIds = new Set<string>();
+    const tracksById = new Map<string, (typeof project.timeline.tracks)[number]>();
     const assetIds = new Set(project.mediaItems.map((item) => String(item.id)));
     for (const [trackIndex, track] of project.timeline.tracks.entries()) {
       if (trackIds.has(track.id)) {
@@ -311,6 +338,7 @@ export const projectSnapshotSchema = z
         });
       }
       trackIds.add(track.id);
+      tracksById.set(track.id, track);
       for (const [clipIndex, clip] of track.clips.entries()) {
         if (clipIds.has(clip.id)) {
           context.addIssue({
@@ -327,6 +355,48 @@ export const projectSnapshotSchema = z
             message: 'Every clip must reference a media-library asset.',
           });
         }
+      }
+    }
+
+    const transitionIds = new Set<string>();
+    const transitionedCuts = new Set<string>();
+    for (const [transitionIndex, transition] of project.timeline.transitions.entries()) {
+      if (transitionIds.has(transition.id)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['timeline', 'transitions', transitionIndex, 'id'],
+          message: 'Transition ids must be unique.',
+        });
+      }
+      transitionIds.add(transition.id);
+      const cutKey = `${transition.fromClipId}:${transition.toClipId}`;
+      if (transitionedCuts.has(cutKey)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['timeline', 'transitions', transitionIndex],
+          message: 'A clip cut can contain only one transition.',
+        });
+      }
+      transitionedCuts.add(cutKey);
+
+      const track = tracksById.get(transition.trackId);
+      const ordered = track ? [...track.clips].sort((left, right) => left.start - right.start) : [];
+      const fromIndex = ordered.findIndex((clip) => clip.id === transition.fromClipId);
+      const from = ordered[fromIndex];
+      const to = ordered[fromIndex + 1];
+      if (
+        !track ||
+        !from ||
+        !to ||
+        to.id !== transition.toClipId ||
+        from.start + from.duration !== to.start ||
+        transition.duration > Math.min(from.duration, to.duration)
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['timeline', 'transitions', transitionIndex],
+          message: 'Transitions must join touching adjacent clips and fit both endpoints.',
+        });
       }
     }
   });

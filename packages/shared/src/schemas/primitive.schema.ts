@@ -13,6 +13,7 @@ import {
   type SegmentId,
   type TemplateId,
   type TrackId,
+  type TransitionId,
 } from '../branded/branded.js';
 
 const identifier = z.string().trim().min(1).max(512);
@@ -37,6 +38,8 @@ export const assetIdSchema = identifier.transform((value) => value as AssetId);
 export const trackIdSchema = identifier.transform((value) => value as TrackId);
 /** Validates a clip identifier and applies its nominal brand. */
 export const clipIdSchema = identifier.transform((value) => value as ClipId);
+/** Validates a timeline transition identifier and applies its nominal brand. */
+export const transitionIdSchema = identifier.transform((value) => value as TransitionId);
 /** Validates a subtitle segment identifier and applies its nominal brand. */
 export const segmentIdSchema = identifier.transform((value) => value as SegmentId);
 /** Validates a template identifier and applies its nominal brand. */

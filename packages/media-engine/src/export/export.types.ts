@@ -38,6 +38,14 @@ export interface ExportClip {
     readonly fadeIn: Milliseconds;
     readonly fadeOut: Milliseconds;
   };
+  /** Effect joining this clip to the next ordered export clip. */
+  readonly transitionToNext: ExportTransition | null;
+}
+
+/** Resolved core transition supported by the native FFmpeg export graph. */
+export interface ExportTransition {
+  readonly kind: string;
+  readonly duration: Milliseconds;
 }
 
 /**

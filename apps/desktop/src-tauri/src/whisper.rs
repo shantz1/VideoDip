@@ -5,7 +5,7 @@ use serde_json::Value;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -433,11 +433,9 @@ fn run_child(
             let app = app.clone();
             let task_id = task_id.to_string();
             std::thread::spawn(move || {
-                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                    if let Some(percent) = parse_progress_percent(&line) {
-                        emit(&app, &task_id, "Transcribing", 0.15 + percent * 0.82);
-                    }
-                }
+                read_progress_stream(BufReader::new(stderr), |percent| {
+                    emit(&app, &task_id, "Transcribing", 0.15 + percent * 0.82);
+                });
             })
         })
     });
@@ -469,6 +467,34 @@ fn run_child(
             };
         }
         std::thread::sleep(Duration::from_millis(30));
+    }
+}
+
+fn read_progress_stream(mut reader: impl Read, mut on_progress: impl FnMut(f64)) {
+    let mut chunk = [0_u8; 1024];
+    let mut pending = Vec::new();
+    loop {
+        let count = match reader.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(count) => count,
+        };
+        for byte in &chunk[..count] {
+            if *byte == b'\r' || *byte == b'\n' {
+                if !pending.is_empty() {
+                    if let Some(percent) =
+                        parse_progress_percent(&String::from_utf8_lossy(&pending))
+                    {
+                        on_progress(percent);
+                    }
+                    pending.clear();
+                }
+            } else {
+                pending.push(*byte);
+            }
+        }
+    }
+    if let Some(percent) = parse_progress_percent(&String::from_utf8_lossy(&pending)) {
+        on_progress(percent);
     }
 }
 
@@ -564,5 +590,13 @@ mod tests {
             Some(0.42)
         );
         assert_eq!(parse_progress_percent("not progress"), None);
+    }
+
+    #[test]
+    fn streams_carriage_return_progress_before_process_exit() {
+        let source = b"progress =  12%\rprogress =  42%\rprogress = 100%\n";
+        let mut observed = Vec::new();
+        read_progress_stream(&source[..], |percent| observed.push(percent));
+        assert_eq!(observed, vec![0.12, 0.42, 1.0]);
     }
 }

@@ -33,6 +33,7 @@ export type ProjectId = Brand<string, 'ProjectId'>;
 export type AssetId = Brand<string, 'AssetId'>;
 export type TrackId = Brand<string, 'TrackId'>;
 export type ClipId = Brand<string, 'ClipId'>;
+export type TransitionId = Brand<string, 'TransitionId'>;
 export type SegmentId = Brand<string, 'SegmentId'>;
 export type TemplateId = Brand<string, 'TemplateId'>;
 export type PluginId = Brand<string, 'PluginId'>;

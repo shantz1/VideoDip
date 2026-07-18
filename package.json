@@ -19,7 +19,9 @@
     "format": "prettier --write \"**/*.{ts,tsx,md,json,yaml,yml,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,md,json,yaml,yml,css}\"",
     "ai:provision:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/provision-whisper-runtime.ps1",
-    "clean": "turbo run clean && rimraf node_modules",
+    "clean": "node scripts/clean-generated.mjs",
+    "clean:check": "node scripts/clean-generated.mjs --dry-run",
+    "clean:all": "node scripts/clean-generated.mjs --dependencies",
     "verify": "turbo run typecheck lint test"
   },
   "devDependencies": {

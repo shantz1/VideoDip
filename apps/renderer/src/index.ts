@@ -16,5 +16,6 @@ export {
   type CompositionClip,
   type CompositionSettings,
   type CompositionSubtitle,
+  type CompositionTransition,
   type VideoDipCompositionProps,
 } from './composition.js';

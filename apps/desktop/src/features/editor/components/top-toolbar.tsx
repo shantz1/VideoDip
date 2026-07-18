@@ -10,7 +10,7 @@ import { useEditorHost } from '../host/editor-host';
 import { startNewProject as startNewProjectCommand } from '../lib/project-commands';
 import { useProjectStore } from '../project.store';
 import { useProjectArchiveController } from './project-archive-controller';
-import { CanvasLayoutSelector } from './canvas-layout-selector';
+import { WorkspaceLayoutSelector } from './workspace-layout-selector';
 
 interface MenuItem {
   readonly label: string;
@@ -168,7 +168,7 @@ export function TopToolbar() {
 
         <div className="bg-border-subtle mx-1 h-4 w-px" />
 
-        <CanvasLayoutSelector />
+        <WorkspaceLayoutSelector />
 
         <Button
           size="sm"
