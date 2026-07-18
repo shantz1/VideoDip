@@ -118,9 +118,7 @@ export async function flattenTimelineAudio(
     return ok({ path: outputPath, durationMs });
   } catch (cause) {
     if (signal?.aborted) return err(flattenCancelledError());
-    return err(
-      appError('IO', 'Could not prepare the timeline audio.', String(cause), { cause }),
-    );
+    return err(appError('IO', 'Could not prepare the timeline audio.', String(cause), { cause }));
   } finally {
     clearTimeout(timeout);
     signal?.removeEventListener('abort', cancel);
