@@ -3,10 +3,12 @@
 import type { AssetId } from '@videodip/shared';
 import { Button, buttonVariants, cn } from '@videodip/ui';
 import { Download, HardDrive, Redo2, Sparkles, Undo2, X } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShortcuts, type Shortcut } from '../../shortcuts/index';
 import { useEditorStore } from '../editor.store';
 import { useEditorHost } from '../host/editor-host';
+import type { RenderEngineStatus } from '../lib/render-video';
+import { useSubtitleStore } from '../subtitle.store';
 import { startNewProject as startNewProjectCommand } from '../lib/project-commands';
 import { useProjectStore } from '../project.store';
 import { useProjectArchiveController } from './project-archive-controller';
@@ -207,28 +209,52 @@ type ExportPhase =
   | { readonly kind: 'running'; readonly fraction: number }
   | { readonly kind: 'error'; readonly message: string };
 
+type ExportEngine = 'composited' | 'cuts';
+
 /**
- * The Export action: save dialog → FFmpeg with real percentage progress.
+ * The Export action: save dialog → the selected engine with real percentage
+ * progress.
  *
- * State is local — an export in flight or a failure message is transient UI,
- * not project state, and nothing outside this button needs it. Disabled while
- * the timeline is empty (nothing to export) or an export is already running
- * (FFmpeg contends for the same output file). Ctrl+E goes through the
- * central shortcut registry, never an ad-hoc listener.
+ * Two engines, chosen explicitly (ADR-0011): "Full render" burns in
+ * subtitles, transitions and effects through the same composition the
+ * preview shows; "Fast cut" is the FFmpeg cuts-only path, always available
+ * as the fallback. State is local — an export in flight or a failure message
+ * is transient UI, not project state, and nothing outside this button needs
+ * it. Disabled while the timeline is empty (nothing to export) or an export
+ * is already running (both engines contend for the same output file). Ctrl+E
+ * goes through the central shortcut registry, never an ad-hoc listener.
  */
 function ExportButton() {
-  const { exportTimeline } = useEditorHost();
+  const { exportTimeline, renderTimelineComposited, getRenderEngineStatus } = useEditorHost();
   const documentValue = useProjectStore((state) => state.document);
+  const subtitleDocument = useSubtitleStore((state) => state.document);
   const mediaItems = useEditorStore((state) => state.mediaItems);
   const aspectRatio = useEditorStore((state) => state.aspectRatio);
   const exportPresetId = useEditorStore((state) => state.exportPresetId);
   const [phase, setPhase] = useState<ExportPhase>({ kind: 'idle' });
+  const [renderStatus, setRenderStatus] = useState<RenderEngineStatus | null>(null);
+  const [engine, setEngine] = useState<ExportEngine>('cuts');
   const exportController = useRef<AbortController | null>(null);
+
+  // Probe once on mount; never rejects. Default to the WYSIWYG engine when
+  // it is provisioned — but the choice stays visible and reversible.
+  useEffect(() => {
+    let isMounted = true;
+    void getRenderEngineStatus().then((status) => {
+      if (!isMounted) return;
+      setRenderStatus(status);
+      if (status.isAvailable) setEngine('composited');
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [getRenderEngineStatus]);
 
   const hasClips = documentValue.tracks.some(
     (track) => track.kind === 'video' && track.clips.length > 0,
   );
   const isRunning = phase.kind === 'running';
+  const isCompositedAvailable = renderStatus?.isAvailable === true;
 
   const startExport = async () => {
     if (!hasClips || isRunning) return;
@@ -236,15 +262,35 @@ function ExportButton() {
     const controller = new AbortController();
     exportController.current = controller;
 
-    const pathByAsset = new Map(mediaItems.map((item) => [item.id, String(item.locator)]));
-    const result = await exportTimeline(
-      documentValue,
-      (assetId: AssetId) => pathByAsset.get(assetId),
-      aspectRatio,
-      (fraction) => setPhase({ kind: 'running', fraction }),
-      controller.signal,
-      exportPresetId,
-    );
+    const mediaByAsset = new Map(mediaItems.map((item) => [item.id, item]));
+    const onProgress = (fraction: number) => setPhase({ kind: 'running', fraction });
+    const result =
+      engine === 'composited' && isCompositedAvailable
+        ? await renderTimelineComposited(
+            documentValue,
+            subtitleDocument,
+            (assetId: AssetId) => {
+              const item = mediaByAsset.get(assetId);
+              return item === undefined
+                ? undefined
+                : { path: String(item.locator), mediaKind: item.kind };
+            },
+            aspectRatio,
+            onProgress,
+            controller.signal,
+            exportPresetId,
+          )
+        : await exportTimeline(
+            documentValue,
+            (assetId: AssetId) => {
+              const item = mediaByAsset.get(assetId);
+              return item === undefined ? undefined : String(item.locator);
+            },
+            aspectRatio,
+            onProgress,
+            controller.signal,
+            exportPresetId,
+          );
     if (exportController.current === controller) exportController.current = null;
 
     if (result.ok) {
@@ -282,9 +328,59 @@ function ExportButton() {
   );
   useShortcuts(shortcuts);
 
+  const engineOptions: readonly {
+    readonly id: ExportEngine;
+    readonly label: string;
+    readonly title: string;
+    readonly isDisabled: boolean;
+  }[] = [
+    {
+      id: 'composited',
+      label: 'Full',
+      title: isCompositedAvailable
+        ? 'Full render: subtitles, transitions and effects burned in — exactly what the preview shows.'
+        : (renderStatus?.reason ?? 'Checking the composited render runtime…'),
+      isDisabled: !isCompositedAvailable || isRunning,
+    },
+    {
+      id: 'cuts',
+      label: 'Fast',
+      title:
+        'Fast cut: FFmpeg joins the trimmed clips directly. Quickest, but subtitles and effects are not burned in.',
+      isDisabled: isRunning,
+    },
+  ];
+
   return (
     <div className="relative">
       <div className="flex items-center gap-1">
+        <div
+          role="radiogroup"
+          aria-label="Export engine"
+          className="bg-surface-sunken flex items-center gap-0.5 rounded-md p-0.5"
+        >
+          {engineOptions.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={engine === option.id}
+              disabled={option.isDisabled}
+              title={option.title}
+              onClick={() => setEngine(option.id)}
+              className={cn(
+                'rounded-sm px-2 py-1 text-xs transition-colors duration-[--duration-fast]',
+                'focus-visible:outline-2 focus-visible:outline-[--color-border-focus]',
+                engine === option.id
+                  ? 'bg-surface-raised text-text-primary shadow-sm'
+                  : 'text-text-secondary hover:text-text-primary',
+                'disabled:text-text-disabled disabled:pointer-events-none',
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         <Button
           size="sm"
           variant="primary"

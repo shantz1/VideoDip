@@ -218,6 +218,7 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
   const zoomOut = useEditorStore((s) => s.zoomOut);
   const playhead = useEditorStore((s) => s.playhead);
   const seek = useEditorStore((s) => s.seek);
+  const nudge = useEditorStore((s) => s.nudge);
   const selectedClipId = useEditorStore((s) => s.selectedClipId);
   const selectedTransitionId = useEditorStore((s) => s.selectedTransitionId);
   const selectClip = useEditorStore((s) => s.selectClip);
@@ -235,6 +236,7 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
   const setInspectorTab = useEditorStore((state) => state.setInspectorTab);
   const snapEnabled = useEditorStore((s) => s.snapEnabled);
   const [editError, setEditError] = useState<string | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -306,6 +308,17 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
     seek(ms((x / zoom) * 1000));
   };
 
+  /**
+   * Converts a viewport x-coordinate into a time and seeks there — the drag
+   * form of `seekFromPointer`, anchored to the scrolled content so a captured
+   * pointer keeps scrubbing correctly wherever it wanders.
+   */
+  const scrubToClientX = (clientX: number) => {
+    const rect = contentRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    seek(ms(Math.max(0, ((clientX - rect.left) / zoom) * 1000)));
+  };
+
   const mediaNameFor = (assetId: string): string =>
     mediaItems.find((item) => item.id === assetId)?.name ?? 'Unknown clip';
 
@@ -329,8 +342,14 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
           {editError}
         </p>
       )}
-      <div style={{ width, minWidth: '100%' }} className="relative">
-        <Ruler zoom={zoom} duration={viewDuration} playhead={playhead} onSeek={seekFromPointer} />
+      <div ref={contentRef} style={{ width, minWidth: '100%' }} className="relative">
+        <Ruler
+          zoom={zoom}
+          duration={viewDuration}
+          playhead={playhead}
+          onSeek={seekFromPointer}
+          onNudge={(deltaMs) => nudge(ms(deltaMs))}
+        />
 
         {projectDocument.tracks.map((track) => {
           const color = trackColorClass(track.kind);
@@ -438,6 +457,7 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
           x={(playhead / 1000) * zoom}
           canSplit={canSplitAtPlayhead || canSplitSubtitleAtPlayhead}
           onSplit={splitAtPlayhead}
+          onScrub={scrubToClientX}
         />
       </div>
     </div>
@@ -672,11 +692,13 @@ function Ruler({
   duration,
   playhead,
   onSeek,
+  onNudge,
 }: {
   zoom: number;
   duration: number;
   playhead: number;
   onSeek: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onNudge: (deltaMs: number) => void;
 }) {
   // Choose a tick interval that keeps labels ~60px apart, so the ruler stays
   // legible across the whole zoom range instead of collapsing into a smear.
@@ -687,7 +709,22 @@ function Ruler({
   return (
     <div
       className="border-border-subtle bg-surface-raised relative h-6 cursor-pointer border-b"
-      onPointerDown={onSeek}
+      // Capture on press so dragging keeps scrubbing — a ruler that only
+      // seeks on the initial click reads as broken the moment the pointer
+      // moves.
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        onSeek(event);
+      }}
+      onPointerMove={(event) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) onSeek(event);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        const magnitude = event.shiftKey ? 1000 : 100;
+        onNudge(event.key === 'ArrowLeft' ? -magnitude : magnitude);
+      }}
       role="slider"
       aria-label="Playhead position"
       aria-valuemin={0}
@@ -713,7 +750,17 @@ function Ruler({
   );
 }
 
-function Playhead({ x, canSplit, onSplit }: { x: number; canSplit: boolean; onSplit: () => void }) {
+function Playhead({
+  x,
+  canSplit,
+  onSplit,
+  onScrub,
+}: {
+  x: number;
+  canSplit: boolean;
+  onSplit: () => void;
+  onScrub: (clientX: number) => void;
+}) {
   return (
     <div
       className={cn(
@@ -725,6 +772,21 @@ function Playhead({ x, canSplit, onSplit }: { x: number; canSplit: boolean; onSp
       <div
         className="bg-timeline-playhead absolute -top-0 -left-[3px] size-[7px] rounded-[2px]"
         aria-hidden="true"
+      />
+      {/* Mouse-only drag handle over the full line. Keyboard users get the
+          equivalent control on the ruler slider above, so this stays out of
+          the accessibility tree rather than duplicating it. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-auto absolute inset-y-0 -left-1 w-2 cursor-ew-resize"
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          onScrub(event.clientX);
+        }}
+        onPointerMove={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) onScrub(event.clientX);
+        }}
       />
       <Button
         size="icon-sm"

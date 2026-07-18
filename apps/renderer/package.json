@@ -26,6 +26,8 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
+    "@remotion/bundler": "catalog:",
+    "@remotion/renderer": "catalog:",
     "@videodip/shared": "workspace:*",
     "react": "catalog:",
     "react-dom": "catalog:",

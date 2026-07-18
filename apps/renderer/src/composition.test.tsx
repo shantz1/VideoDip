@@ -8,7 +8,7 @@ vi.mock('remotion', () => ({
     <section data-duration={durationInFrames}>{children}</section>
   ),
   Audio: ({ src }: { src: string }) => <span data-media="audio" data-src={src} />,
-  Video: ({ src, style }: { src: string; style?: unknown }) => (
+  OffthreadVideo: ({ src, style }: { src: string; style?: unknown }) => (
     <span data-media="video" data-src={src} data-style={JSON.stringify(style)} />
   ),
   useCurrentFrame: () => 0,

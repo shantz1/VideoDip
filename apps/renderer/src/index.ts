@@ -19,3 +19,4 @@ export {
   type CompositionTransition,
   type VideoDipCompositionProps,
 } from './composition.js';
+export { renderJobSchema, type RenderJob } from './render/render-job.js';

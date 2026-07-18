@@ -12,6 +12,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "start:videodip": "pnpm --filter @videodip/desktop tauri dev",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
@@ -19,6 +20,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,md,json,yaml,yml,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,md,json,yaml,yml,css}\"",
     "ai:provision:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/provision-whisper-runtime.ps1",
+    "render:provision:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/provision-render-runtime.ps1",
     "clean": "node scripts/clean-generated.mjs",
     "clean:check": "node scripts/clean-generated.mjs --dry-run",
     "clean:all": "node scripts/clean-generated.mjs --dependencies",

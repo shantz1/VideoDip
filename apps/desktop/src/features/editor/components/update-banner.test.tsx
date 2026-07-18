@@ -10,6 +10,13 @@ function createHost(appUpdates: AppUpdatePort): EditorHost {
   return {
     importMedia: vi.fn(async () => ok([])),
     exportTimeline: vi.fn(async () => ok(null)),
+    renderTimelineComposited: vi.fn(async () => ok(null)),
+    getRenderEngineStatus: vi.fn(async () => ({
+      isAvailable: false,
+      nodePath: null,
+      cliPath: null,
+      reason: 'Unavailable in tests.',
+    })),
     toggleFullscreen: vi.fn(async () => ok(true)),
     projects: {
       list: vi.fn(async () => ok([])),

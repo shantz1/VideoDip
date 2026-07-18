@@ -3,6 +3,7 @@ mod artifact;
 mod export;
 mod persistence;
 mod probe;
+mod render;
 mod whisper;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -26,6 +27,9 @@ pub fn run() {
             persistence::load_project,
             persistence::save_project,
             probe::probe_media,
+            render::cancel_render,
+            render::get_render_status,
+            render::render_video,
             whisper::cancel_whisper_task,
             whisper::delete_whisper_model,
             whisper::download_whisper_model,

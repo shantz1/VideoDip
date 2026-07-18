@@ -1,8 +1,8 @@
 import userEvent from '@testing-library/user-event';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { createMediaItem } from '@videodip/media-engine';
 import { mediaLocatorSchema, ms } from '@videodip/shared';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEditorStore } from '../editor.store';
 import {
   calculateAnchoredScrollLeft,
@@ -52,6 +52,51 @@ describe('timeline presentation', () => {
 
   it('never asks the viewport to scroll before the timeline start', () => {
     expect(calculateAnchoredScrollLeft(0, 20, 100, 5)).toBe(0);
+  });
+});
+
+describe('playhead scrubbing', () => {
+  beforeEach(() => {
+    // jsdom has no pointer-capture implementation; the handlers gate on it.
+    Element.prototype.setPointerCapture = vi.fn();
+    Element.prototype.hasPointerCapture = vi.fn(() => true);
+    useEditorStore.setState({ zoom: 100 });
+    useEditorStore.getState().setProjectDuration(ms(60_000));
+  });
+
+  it('scrubs while dragging across the ruler, not only on the initial press', () => {
+    render(<TimelinePanel />);
+    const ruler = screen.getByRole('slider', { name: 'Playhead position' });
+
+    fireEvent.pointerDown(ruler, { clientX: 50, pointerId: 1 });
+    expect(useEditorStore.getState().playhead).toBe(500);
+
+    fireEvent.pointerMove(ruler, { clientX: 150, pointerId: 1 });
+    expect(useEditorStore.getState().playhead).toBe(1500);
+  });
+
+  it('drags the playhead line itself', () => {
+    const { container } = render(<TimelinePanel />);
+    const handle = container.querySelector('.cursor-ew-resize');
+    if (handle === null) throw new Error('Expected the playhead drag handle.');
+
+    fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 250, pointerId: 1 });
+    expect(useEditorStore.getState().playhead).toBe(2500);
+  });
+
+  it('nudges the playhead from the keyboard on the ruler slider', () => {
+    render(<TimelinePanel />);
+    const ruler = screen.getByRole('slider', { name: 'Playhead position' });
+
+    fireEvent.keyDown(ruler, { key: 'ArrowRight' });
+    expect(useEditorStore.getState().playhead).toBe(100);
+
+    fireEvent.keyDown(ruler, { key: 'ArrowRight', shiftKey: true });
+    expect(useEditorStore.getState().playhead).toBe(1100);
+
+    fireEvent.keyDown(ruler, { key: 'ArrowLeft' });
+    expect(useEditorStore.getState().playhead).toBe(1000);
   });
 });
 

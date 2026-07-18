@@ -19,6 +19,7 @@ import {
   createBrowserProjectRepository,
   createTauriProjectRepository,
 } from '../lib/project-repository';
+import { getRenderEngineStatus, renderTimelineComposited } from '../lib/render-video';
 import { toggleFullscreen } from '../lib/toggle-fullscreen';
 import { createBrowserAppUpdatePort, createTauriAppUpdatePort } from '../lib/app-update';
 import {
@@ -37,6 +38,8 @@ function createPlatformHost(): EditorHost {
   return {
     importMedia,
     exportTimeline,
+    renderTimelineComposited,
+    getRenderEngineStatus,
     toggleFullscreen,
     projects: desktop
       ? createTauriProjectRepository()

@@ -1,5 +1,5 @@
 import type { MediaKind } from '@videodip/shared';
-import { AbsoluteFill, Audio, Sequence, Video, useCurrentFrame } from 'remotion';
+import { AbsoluteFill, Audio, OffthreadVideo, Sequence, useCurrentFrame } from 'remotion';
 import { z } from 'zod';
 
 const positiveInteger = z.number().int().positive();
@@ -307,7 +307,7 @@ function RenderedClip({ clip }: { readonly clip: CompositionClip }) {
     return (
       <Audio
         src={clip.src}
-        startFrom={clip.sourceStartFrame}
+        trimBefore={clip.sourceStartFrame}
         volume={(audioFrame) => audioVolume(clip, audioFrame)}
       />
     );
@@ -319,10 +319,15 @@ function RenderedClip({ clip }: { readonly clip: CompositionClip }) {
   const rotation = animatedValue(clip, 'rotation', frame, clip.transform.rotation);
   const opacity = animatedValue(clip, 'opacity', frame, clip.opacity);
   const transition = transitionVisualState(clip, frame);
+  // OffthreadVideo rather than <Video>: inside the Player it degrades to a
+  // regular <video> element (identical preview behavior), while headless
+  // rendering extracts frames server-side — which is what lets an export job
+  // reference the user's media by plain absolute path instead of a URL the
+  // sandboxed browser could never load (ADR-0011).
   return (
-    <Video
+    <OffthreadVideo
       src={clip.src}
-      startFrom={clip.sourceStartFrame}
+      trimBefore={clip.sourceStartFrame}
       style={{
         height: '100%',
         width: '100%',

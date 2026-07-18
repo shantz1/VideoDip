@@ -57,6 +57,7 @@ catalog:
 
   # --- Rendering ---
   remotion: 4.0.490
+  '@remotion/bundler': 4.0.490
   '@remotion/cli': 4.0.490
   '@remotion/player': 4.0.490
   '@remotion/renderer': 4.0.490

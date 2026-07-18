@@ -1,7 +1,11 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  // remotion-entry is built to plain JS so the headless CLI's webpack bundle
+  // starts from compiled output — the repo's TypeScript 7 native preview
+  // lacks the `typescript.sys` JS API Remotion's esbuild-loader needs to
+  // consume .tsx sources directly.
+  entry: ['src/index.ts', 'src/render-cli.ts', 'src/remotion-entry.tsx'],
   format: ['esm'],
   clean: true,
   sourcemap: true,

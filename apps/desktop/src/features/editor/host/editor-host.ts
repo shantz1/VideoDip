@@ -20,9 +20,11 @@ import type {
   TranscriptionProvider,
   TranscriptionModelManager,
 } from '@videodip/shared';
+import type { SubtitleDocument } from '@videodip/subtitle-engine';
 import type { TimelineDocument } from '@videodip/timeline';
 import { createContext, createElement, useContext, type ReactNode } from 'react';
 import type { AspectRatio } from '../editor.store';
+import type { RenderEngineStatus, RenderableAsset } from '../lib/render-video';
 
 export interface MediaHostCapability {
   readonly importMedia: () => Promise<Result<readonly MediaItem[]>>;
@@ -42,6 +44,23 @@ export interface ExportHostCapability {
     signal?: AbortSignal,
     presetId?: ExportPresetId,
   ) => Promise<Result<string | null>>;
+  /**
+   * ADR-0011 composited export through the Node render sidecar — the same
+   * composition the preview shows, burned in frame by frame. Selected
+   * explicitly in the export UI; `exportTimeline` (fast FFmpeg cuts) always
+   * remains available alongside it.
+   */
+  readonly renderTimelineComposited: (
+    document: TimelineDocument,
+    subtitles: SubtitleDocument,
+    resolveAsset: (assetId: AssetId) => RenderableAsset | undefined,
+    aspectRatio: AspectRatio,
+    onProgress: (fraction: number) => void,
+    signal?: AbortSignal,
+    presetId?: ExportPresetId,
+  ) => Promise<Result<string | null>>;
+  /** Availability probe for the composited engine; never rejects. */
+  readonly getRenderEngineStatus: () => Promise<RenderEngineStatus>;
 }
 
 export interface WindowHostCapability {
