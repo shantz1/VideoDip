@@ -39,6 +39,19 @@ export function TopToolbar() {
   const redo = useProjectStore((state) => state.redo);
   const canUndo = useProjectStore((state) => state.past.length > 0);
   const canRedo = useProjectStore((state) => state.future.length > 0);
+  const selectedSubtitleId = useEditorStore((state) => state.selectedSubtitleId);
+  const subtitleCanUndo = useSubtitleStore((state) => state.past.length > 0);
+  const subtitleCanRedo = useSubtitleStore((state) => state.future.length > 0);
+  const runUndo = () => {
+    if (selectedSubtitleId !== null && subtitleCanUndo) useSubtitleStore.getState().undo();
+    else undo();
+  };
+  const runRedo = () => {
+    if (selectedSubtitleId !== null && subtitleCanRedo) useSubtitleStore.getState().redo();
+    else redo();
+  };
+  const hasUndo = canUndo || (selectedSubtitleId !== null && subtitleCanUndo);
+  const hasRedo = canRedo || (selectedSubtitleId !== null && subtitleCanRedo);
   const [isImporting, setIsImporting] = useState(false);
   const [isChangingProject, setIsChangingProject] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
@@ -98,8 +111,8 @@ export function TopToolbar() {
     {
       label: 'Edit',
       items: [
-        { label: 'Undo', action: undo, disabled: !canUndo },
-        { label: 'Redo', action: redo, disabled: !canRedo },
+        { label: 'Undo', action: runUndo, disabled: !hasUndo },
+        { label: 'Redo', action: runRedo, disabled: !hasRedo },
       ],
     },
     {
@@ -155,16 +168,16 @@ export function TopToolbar() {
           size="icon-sm"
           variant="ghost"
           aria-label="Undo"
-          disabled={!canUndo}
-          onClick={undo}
+          disabled={!hasUndo}
+          onClick={runUndo}
           leadingIcon={<Undo2 />}
         />
         <Button
           size="icon-sm"
           variant="ghost"
           aria-label="Redo"
-          disabled={!canRedo}
-          onClick={redo}
+          disabled={!hasRedo}
+          onClick={runRedo}
           leadingIcon={<Redo2 />}
         />
 

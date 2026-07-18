@@ -9,18 +9,42 @@ export interface SubtitleWord {
   readonly confidence: Normalized | null;
 }
 
-/** Serializable caption styling; null values inherit the active template. */
+/**
+ * Fully resolved, serializable caption styling.
+ *
+ * Cue-level inheritance is represented only by an omitted key in
+ * {@link SubtitleSegment.style}. `null` is deliberately not part of this
+ * contract: storage migrations normalize legacy nullable values before they
+ * reach the domain, and renderers receive a fully resolved instance.
+ */
 export interface SubtitleStyle {
-  readonly fontFamily: string | null;
-  readonly fontSize: number | null;
-  readonly foreground: string | null;
-  readonly background: string | null;
-  readonly isBold: boolean;
+  readonly fontFamily: string;
+  readonly fontSize: number;
+  readonly fontWeight: number;
   readonly isItalic: boolean;
   readonly isUnderlined: boolean;
+  readonly letterSpacing: number;
+  readonly lineHeight: number;
+  readonly foreground: string;
+  readonly opacity: Normalized;
+  readonly backgroundEnabled: boolean;
+  readonly background: string;
+  readonly backgroundOpacity: Normalized;
+  readonly strokeColor: string;
+  readonly strokeWidth: number;
+  readonly shadowColor: string;
+  readonly shadowBlur: number;
+  readonly shadowOffsetX: number;
+  readonly shadowOffsetY: number;
+  readonly shadowOpacity: Normalized;
   readonly alignment: 'start' | 'center' | 'end';
+  readonly maxWidth: Normalized;
+  readonly padding: number;
+  readonly borderRadius: number;
   readonly positionX: Normalized;
   readonly positionY: Normalized;
+  readonly rotation: number;
+  readonly scale: number;
   readonly animation: 'none' | 'fade' | 'pop' | 'slide-up';
 }
 

@@ -1,10 +1,12 @@
 'use client';
 
+import { resolveSubtitleStyle } from '@videodip/subtitle-engine';
 import { ms } from '@videodip/shared';
 import { useMemo } from 'react';
 import { CommandPalette, useShortcuts, type Shortcut } from '../../shortcuts/index';
 import { useEditorStore } from '../editor.store';
 import { workspaceGridTemplate } from '../lib/workspace-layout';
+import { nudgeSubtitlePosition } from '../lib/subtitle-preview-position';
 import { useProjectStore } from '../project.store';
 import { useSubtitleStore } from '../subtitle.store';
 import { LeftSidebar } from './left-sidebar';
@@ -68,10 +70,21 @@ function EditorShellContent() {
   const removeTransition = useProjectStore((s) => s.removeTransition);
   const canUndo = useProjectStore((s) => s.past.length > 0);
   const canRedo = useProjectStore((s) => s.future.length > 0);
-  const selectedSubtitleId = useSubtitleStore((state) => state.selectedSegmentId);
+  const selectedSubtitleId = useEditorStore((state) => state.selectedSubtitleId);
   const removeSubtitle = useSubtitleStore((state) => state.remove);
   const subtitleCanUndo = useSubtitleStore((state) => state.past.length > 0);
   const subtitleCanRedo = useSubtitleStore((state) => state.future.length > 0);
+
+  const nudgeSelectedSubtitle = (deltaX: number, deltaY: number) => {
+    const subtitleState = useSubtitleStore.getState();
+    const selected = subtitleState.document.segments.find(
+      (segment) => segment.id === useEditorStore.getState().selectedSubtitleId,
+    );
+    if (!selected) return;
+    const style = resolveSubtitleStyle(subtitleState.document.defaultStyle, selected.style);
+    const next = nudgeSubtitlePosition(style, deltaX, deltaY);
+    subtitleState.update(selected.id, { style: next });
+  };
 
   // Memoised so the identity is stable: useShortcuts re-registers when the
   // list's shape changes, and a fresh array every render would thrash it.
@@ -168,6 +181,38 @@ function EditorShellContent() {
         scope: 'playback',
         combo: { key: 'arrowright', shift: true },
         run: () => nudge(NUDGE_LARGE),
+      },
+      {
+        id: 'subtitle.nudgeLeft',
+        label: 'Nudge subtitle left',
+        scope: 'subtitle',
+        combo: { key: 'arrowleft', alt: true },
+        disabled: selectedSubtitleId === null,
+        run: () => nudgeSelectedSubtitle(-0.005, 0),
+      },
+      {
+        id: 'subtitle.nudgeRight',
+        label: 'Nudge subtitle right',
+        scope: 'subtitle',
+        combo: { key: 'arrowright', alt: true },
+        disabled: selectedSubtitleId === null,
+        run: () => nudgeSelectedSubtitle(0.005, 0),
+      },
+      {
+        id: 'subtitle.nudgeUp',
+        label: 'Nudge subtitle up',
+        scope: 'subtitle',
+        combo: { key: 'arrowup', alt: true },
+        disabled: selectedSubtitleId === null,
+        run: () => nudgeSelectedSubtitle(0, -0.005),
+      },
+      {
+        id: 'subtitle.nudgeDown',
+        label: 'Nudge subtitle down',
+        scope: 'subtitle',
+        combo: { key: 'arrowdown', alt: true },
+        disabled: selectedSubtitleId === null,
+        run: () => nudgeSelectedSubtitle(0, 0.005),
       },
       {
         id: 'playback.start',

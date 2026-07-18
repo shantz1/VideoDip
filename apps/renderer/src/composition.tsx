@@ -75,16 +75,33 @@ export const compositionSubtitleSchema = z.object({
     )
     .readonly(),
   style: z.object({
-    fontFamily: z.string().min(1).nullable(),
-    fontSize: z.number().finite().positive().nullable(),
-    foreground: z.string().min(1).nullable(),
-    background: z.string().min(1).nullable(),
-    isBold: z.boolean(),
+    fontFamily: z.string().min(1),
+    fontSize: z.number().finite().positive(),
+    fontWeight: z.number().int().min(100).max(900),
     isItalic: z.boolean(),
     isUnderlined: z.boolean(),
+    letterSpacing: z.number().finite(),
+    lineHeight: z.number().finite().positive(),
+    foreground: z.string().min(1),
+    opacity: z.number().finite().min(0).max(1),
+    backgroundEnabled: z.boolean(),
+    background: z.string().min(1),
+    backgroundOpacity: z.number().finite().min(0).max(1),
+    strokeColor: z.string().min(1),
+    strokeWidth: z.number().finite().nonnegative(),
+    shadowColor: z.string().min(1),
+    shadowBlur: z.number().finite().nonnegative(),
+    shadowOffsetX: z.number().finite(),
+    shadowOffsetY: z.number().finite(),
+    shadowOpacity: z.number().finite().min(0).max(1),
     alignment: z.enum(['start', 'center', 'end']),
+    maxWidth: z.number().finite().min(0).max(1),
+    padding: z.number().finite().nonnegative(),
+    borderRadius: z.number().finite().nonnegative(),
     positionX: z.number().finite().min(0).max(1),
     positionY: z.number().finite().min(0).max(1),
+    rotation: z.number().finite(),
+    scale: z.number().finite().positive(),
     animation: z.enum(['none', 'fade', 'pop', 'slide-up']),
   }),
 });
@@ -179,16 +196,33 @@ export interface CompositionSubtitle {
     readonly endFrame: number;
   }[];
   readonly style: {
-    readonly fontFamily: string | null;
-    readonly fontSize: number | null;
-    readonly foreground: string | null;
-    readonly background: string | null;
-    readonly isBold: boolean;
+    readonly fontFamily: string;
+    readonly fontSize: number;
+    readonly fontWeight: number;
     readonly isItalic: boolean;
     readonly isUnderlined: boolean;
+    readonly letterSpacing: number;
+    readonly lineHeight: number;
+    readonly foreground: string;
+    readonly opacity: number;
+    readonly backgroundEnabled: boolean;
+    readonly background: string;
+    readonly backgroundOpacity: number;
+    readonly strokeColor: string;
+    readonly strokeWidth: number;
+    readonly shadowColor: string;
+    readonly shadowBlur: number;
+    readonly shadowOffsetX: number;
+    readonly shadowOffsetY: number;
+    readonly shadowOpacity: number;
     readonly alignment: 'start' | 'center' | 'end';
+    readonly maxWidth: number;
+    readonly padding: number;
+    readonly borderRadius: number;
     readonly positionX: number;
     readonly positionY: number;
+    readonly rotation: number;
+    readonly scale: number;
     readonly animation: 'none' | 'fade' | 'pop' | 'slide-up';
   };
 }
@@ -248,9 +282,6 @@ export function VideoDipComposition({ clips, subtitles }: VideoDipCompositionPro
   );
 }
 
-const DEFAULT_CAPTION_FOREGROUND = '#ffffff';
-const DEFAULT_CAPTION_BACKGROUND = 'rgba(0, 0, 0, 0.72)';
-
 function RenderedSubtitle({ subtitle }: { readonly subtitle: CompositionSubtitle }) {
   const frame = useCurrentFrame();
   const textAlign = subtitle.style.alignment;
@@ -264,25 +295,38 @@ function RenderedSubtitle({ subtitle }: { readonly subtitle: CompositionSubtitle
         position: 'absolute',
         left: `${subtitle.style.positionX * 100}%`,
         top: `${subtitle.style.positionY * 100}%`,
-        width: '90%',
-        transform: `translate(-50%, calc(-50% + ${animatedY}px)) scale(${animatedScale})`,
-        opacity: animatedOpacity,
+        width: `${subtitle.style.maxWidth * 100}%`,
+        transform: `translate(-50%, calc(-50% + ${animatedY}px)) rotate(${subtitle.style.rotation}deg) scale(${subtitle.style.scale * animatedScale})`,
+        opacity: subtitle.style.opacity * animatedOpacity,
         textAlign,
-        fontFamily: subtitle.style.fontFamily ?? 'sans-serif',
-        fontSize: subtitle.style.fontSize ?? 48,
-        fontWeight: subtitle.style.isBold ? 700 : 400,
+        fontFamily: subtitle.style.fontFamily,
+        fontSize: subtitle.style.fontSize,
+        fontWeight: subtitle.style.fontWeight,
         fontStyle: subtitle.style.isItalic ? 'italic' : 'normal',
         textDecoration: subtitle.style.isUnderlined ? 'underline' : 'none',
-        color: subtitle.style.foreground ?? DEFAULT_CAPTION_FOREGROUND,
+        letterSpacing: subtitle.style.letterSpacing,
+        lineHeight: subtitle.style.lineHeight,
+        color: subtitle.style.foreground,
         whiteSpace: 'pre-wrap',
       }}
     >
       <span
         style={{
-          backgroundColor: subtitle.style.background ?? DEFAULT_CAPTION_BACKGROUND,
+          backgroundColor: subtitle.style.backgroundEnabled
+            ? colorWithOpacity(subtitle.style.background, subtitle.style.backgroundOpacity)
+            : 'transparent',
           boxDecorationBreak: 'clone',
-          padding: '0.12em 0.3em',
-          borderRadius: '0.15em',
+          padding: subtitle.style.padding,
+          borderRadius: subtitle.style.borderRadius,
+          WebkitTextStroke:
+            subtitle.style.strokeWidth > 0
+              ? `${subtitle.style.strokeWidth}px ${subtitle.style.strokeColor}`
+              : undefined,
+          paintOrder: 'stroke fill',
+          textShadow:
+            subtitle.style.shadowOpacity > 0
+              ? `${subtitle.style.shadowOffsetX}px ${subtitle.style.shadowOffsetY}px ${subtitle.style.shadowBlur}px ${colorWithOpacity(subtitle.style.shadowColor, subtitle.style.shadowOpacity)}`
+              : undefined,
         }}
       >
         {subtitle.words.length === 0
@@ -299,6 +343,16 @@ function RenderedSubtitle({ subtitle }: { readonly subtitle: CompositionSubtitle
       </span>
     </div>
   );
+}
+
+function colorWithOpacity(color: string, opacity: number): string {
+  if (opacity >= 1) return color;
+  if (opacity <= 0) return 'transparent';
+  const hex = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(color);
+  if (hex) {
+    return `rgba(${Number.parseInt(hex[1] ?? '0', 16)}, ${Number.parseInt(hex[2] ?? '0', 16)}, ${Number.parseInt(hex[3] ?? '0', 16)}, ${opacity})`;
+  }
+  return `color-mix(in srgb, ${color} ${opacity * 100}%, transparent)`;
 }
 
 function RenderedClip({ clip }: { readonly clip: CompositionClip }) {

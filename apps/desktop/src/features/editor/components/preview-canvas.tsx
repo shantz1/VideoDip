@@ -8,6 +8,7 @@ import { useEditorStore, type AspectRatio } from '../editor.store';
 import { useEditorHost } from '../host/editor-host';
 import { formatTimecode } from '../lib/timecode';
 import { PreviewPlayer } from './preview-player';
+import { SubtitlePreviewOverlay } from './subtitle-preview-overlay';
 
 /**
  * CSS `aspect-ratio` values, not Tailwind classes.
@@ -56,11 +57,12 @@ function Stage() {
         'relative h-full max-h-full max-w-full overflow-hidden rounded-lg',
         'bg-canvas ring-border-subtle shadow-lg ring-1',
       )}
-      style={{ aspectRatio: ASPECT_RATIO_CSS[aspectRatio] }}
+      style={{ aspectRatio: ASPECT_RATIO_CSS[aspectRatio], containerType: 'size' }}
     >
       <div className="absolute inset-0">
         <PreviewPlayer />
       </div>
+      <SubtitlePreviewOverlay />
     </div>
   );
 }

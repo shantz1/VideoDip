@@ -1,7 +1,11 @@
 import { fps, ms, msToFrames, type AssetId, type Fps, type MediaKind } from '@videodip/shared';
 import type { ClipTransition, TimelineDocument } from '@videodip/timeline';
 import type { CompositionClip, CompositionTransition } from '@videodip/renderer';
-import type { SubtitleDocument } from '@videodip/subtitle-engine';
+import {
+  resolveSubtitleStyle,
+  type SubtitleDocument,
+  type SubtitleStyle,
+} from '@videodip/subtitle-engine';
 import type { CompositionSubtitle } from '@videodip/renderer';
 
 /**
@@ -102,6 +106,7 @@ function toCompositionTransition(
 export function toCompositionSubtitles(
   document: SubtitleDocument,
   frameRate: Fps = PROJECT_FPS,
+  stylePreviews: Readonly<Record<string, Partial<SubtitleStyle>>> = {},
 ): readonly CompositionSubtitle[] {
   return document.segments.map((segment) => ({
     id: segment.id,
@@ -114,6 +119,6 @@ export function toCompositionSubtitles(
       startFrame: Math.max(0, msToFrames(ms(word.start - segment.start), frameRate)),
       endFrame: Math.max(1, msToFrames(ms(word.end - segment.start), frameRate)),
     })),
-    style: { ...document.defaultStyle, ...segment.style },
+    style: resolveSubtitleStyle(document.defaultStyle, segment.style, stylePreviews[segment.id]),
   }));
 }

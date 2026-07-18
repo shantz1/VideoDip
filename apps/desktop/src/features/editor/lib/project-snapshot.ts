@@ -19,7 +19,7 @@ export interface ProjectSnapshotSource {
   readonly aspectRatio: AspectRatio;
   readonly timeline: TimelineDocument;
   readonly mediaItems: readonly MediaItem[];
-  readonly subtitles?: SubtitleDocument;
+  readonly subtitles: SubtitleDocument;
   readonly createdAt: string;
   readonly updatedAt: string;
 }

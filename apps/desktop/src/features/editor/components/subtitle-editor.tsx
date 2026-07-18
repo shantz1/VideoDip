@@ -5,7 +5,6 @@ import {
   parseSubtitle,
   type SubtitleFormat,
   type SubtitleSegment,
-  type SubtitleStyle,
   type SubtitleWord,
 } from '@videodip/subtitle-engine';
 import { ms } from '@videodip/shared';
@@ -14,16 +13,16 @@ import { Captions, FileDown, FileUp, Plus, Scissors, Trash2 } from 'lucide-react
 import { useMemo, useState, type ReactNode } from 'react';
 import { useEditorStore } from '../editor.store';
 import { useSubtitleStore } from '../subtitle.store';
+import { SubtitleStyleInspector } from './subtitle-style-inspector';
 
 /** Complete document-level subtitle timing, text, style, and interchange editor. */
 export function SubtitleEditor() {
   const document = useSubtitleStore((state) => state.document);
-  const selectedId = useSubtitleStore((state) => state.selectedSegmentId);
+  const selectedId = useEditorStore((state) => state.selectedSubtitleId);
   const select = useSubtitleStore((state) => state.select);
   const add = useSubtitleStore((state) => state.add);
   const replace = useSubtitleStore((state) => state.replace);
   const setLanguage = useSubtitleStore((state) => state.setLanguage);
-  const setDefaultStyle = useSubtitleStore((state) => state.setDefaultStyle);
   const playhead = useEditorStore((state) => state.playhead);
   const seek = useEditorStore((state) => state.seek);
   const selectClip = useEditorStore((state) => state.selectClip);
@@ -75,51 +74,6 @@ export function SubtitleEditor() {
           onBlur={(event) => setLanguage(event.currentTarget.value)}
           className={controlClassName}
         />
-      </Field>
-
-      <Field label="All captions">
-        <div className="grid grid-cols-3 gap-2">
-          <input
-            key={`document-foreground-${document.defaultStyle.foreground ?? 'inherited'}`}
-            aria-label="All caption text color"
-            type="color"
-            {...(document.defaultStyle.foreground === null
-              ? {}
-              : { defaultValue: document.defaultStyle.foreground })}
-            onChange={(event) =>
-              setDefaultStyle({ ...document.defaultStyle, foreground: event.target.value })
-            }
-            className={controlClassName}
-          />
-          <input
-            key={`document-background-${document.defaultStyle.background ?? 'inherited'}`}
-            aria-label="All caption background color"
-            type="color"
-            {...(document.defaultStyle.background === null
-              ? {}
-              : { defaultValue: document.defaultStyle.background })}
-            onChange={(event) =>
-              setDefaultStyle({ ...document.defaultStyle, background: event.target.value })
-            }
-            className={controlClassName}
-          />
-          <select
-            aria-label="All caption animation"
-            value={document.defaultStyle.animation}
-            onChange={(event) =>
-              setDefaultStyle({
-                ...document.defaultStyle,
-                animation: event.target.value as SubtitleStyle['animation'],
-              })
-            }
-            className={controlClassName}
-          >
-            <option value="none">Still</option>
-            <option value="fade">Fade</option>
-            <option value="pop">Pop</option>
-            <option value="slide-up">Slide up</option>
-          </select>
-        </div>
       </Field>
 
       <div className="border-border-subtle max-h-48 overflow-y-auto rounded-md border">
@@ -247,7 +201,7 @@ function SelectedCueEditor({
           />
         </Field>
       </div>
-      <CaptionStyleEditor cue={cue} onApply={apply} />
+      <SubtitleStyleInspector cue={cue} onError={onError} />
       {cue.words.length > 0 && <WordTimingEditor cue={cue} onApply={apply} />}
       <div className="grid grid-cols-2 gap-2">
         <Button
@@ -266,86 +220,6 @@ function SelectedCueEditor({
           Delete cue
         </Button>
       </div>
-    </div>
-  );
-}
-
-function CaptionStyleEditor({
-  cue,
-  onApply,
-}: {
-  readonly cue: SubtitleSegment;
-  readonly onApply: (patch: Partial<Omit<SubtitleSegment, 'id'>>) => void;
-}) {
-  const style = cue.style;
-  const patchStyle = (patch: Partial<SubtitleStyle>) => onApply({ style: patch });
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      {(['isBold', 'isItalic', 'isUnderlined'] as const).map((property) => (
-        <label key={property} className="text-text-tertiary flex items-center gap-1 text-xs">
-          <input
-            type="checkbox"
-            checked={style[property] ?? false}
-            onChange={(event) => patchStyle({ [property]: event.target.checked })}
-          />
-          {property === 'isBold' ? 'Bold' : property === 'isItalic' ? 'Italic' : 'Underline'}
-        </label>
-      ))}
-      <select
-        aria-label="Caption alignment"
-        value={style.alignment ?? 'center'}
-        onChange={(event) =>
-          patchStyle({ alignment: event.target.value as SubtitleStyle['alignment'] })
-        }
-        className={cn(controlClassName, 'col-span-2')}
-      >
-        <option value="start">Left</option>
-        <option value="center">Center</option>
-        <option value="end">Right</option>
-      </select>
-      <input
-        aria-label="Caption size"
-        type="number"
-        min="8"
-        max="1000"
-        placeholder="Size"
-        defaultValue={style.fontSize ?? ''}
-        onBlur={(event) => patchStyle({ fontSize: event.currentTarget.valueAsNumber || null })}
-        className={controlClassName}
-      />
-      <input
-        key={`foreground-${style.foreground ?? 'inherited'}`}
-        aria-label="Caption text color"
-        type="color"
-        {...(style.foreground === null || style.foreground === undefined
-          ? {}
-          : { defaultValue: style.foreground })}
-        onChange={(event) => patchStyle({ foreground: event.target.value })}
-        className={controlClassName}
-      />
-      <input
-        key={`background-${style.background ?? 'inherited'}`}
-        aria-label="Caption background color"
-        type="color"
-        {...(style.background === null || style.background === undefined
-          ? {}
-          : { defaultValue: style.background })}
-        onChange={(event) => patchStyle({ background: event.target.value })}
-        className={controlClassName}
-      />
-      <select
-        aria-label="Caption animation"
-        value={style.animation ?? 'fade'}
-        onChange={(event) =>
-          patchStyle({ animation: event.target.value as SubtitleStyle['animation'] })
-        }
-        className={controlClassName}
-      >
-        <option value="none">No animation</option>
-        <option value="fade">Fade</option>
-        <option value="pop">Pop</option>
-        <option value="slide-up">Slide up</option>
-      </select>
     </div>
   );
 }

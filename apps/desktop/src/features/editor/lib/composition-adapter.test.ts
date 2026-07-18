@@ -169,7 +169,7 @@ describe('toCompositionSubtitles', () => {
         { id: 'hello', text: 'Hello', start: ms(1000), end: ms(1800), confidence: null },
         { id: 'world', text: 'world', start: ms(1900), end: ms(3000), confidence: null },
       ],
-      style: { isBold: true },
+      style: { fontWeight: 800 },
     });
     if (!added.ok) throw new Error(added.error.message);
     expect(toCompositionSubtitles(added.value)[0]).toMatchObject({
@@ -179,8 +179,37 @@ describe('toCompositionSubtitles', () => {
         { text: 'Hello', startFrame: 0, endFrame: 24 },
         { text: 'world', startFrame: 27, endFrame: 60 },
       ],
-      style: { isBold: true, positionX: 0.5, positionY: 0.88 },
+      style: { fontWeight: 800, positionX: 0.5, positionY: 0.88 },
     });
+  });
+
+  it('sends a fully resolved style and applies transient preview as the final layer', () => {
+    const added = addSubtitleSegment(createSubtitleDocument('en'), {
+      id: 'previewed' as never,
+      start: ms(0),
+      end: ms(1000),
+      text: 'Preview',
+      style: { foreground: '#112233', fontWeight: 400 },
+    });
+    if (!added.ok) throw new Error(added.error.message);
+    const [subtitle] = toCompositionSubtitles(added.value, undefined, {
+      previewed: { foreground: '#abcdef' },
+    });
+
+    expect(subtitle?.style).toMatchObject({
+      fontFamily: 'sans-serif',
+      fontSize: 48,
+      fontWeight: 400,
+      foreground: '#abcdef',
+      opacity: 1,
+      backgroundEnabled: true,
+      strokeWidth: 0,
+      shadowOpacity: 0,
+      maxWidth: 0.9,
+      rotation: 0,
+      scale: 1,
+    });
+    expect(Object.values(subtitle?.style ?? {})).not.toContain(null);
   });
 });
 

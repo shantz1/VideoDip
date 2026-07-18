@@ -4,6 +4,7 @@ import {
   addSubtitleSegment,
   createSubtitleDocument,
   removeSubtitleSegment,
+  resolveSubtitleStyle,
   shiftSubtitles,
   splitSubtitleSegment,
   updateSubtitleSegment,
@@ -75,6 +76,32 @@ describe('subtitle document', () => {
     expect(original.segments[0]?.speaker).toBeNull();
     expect(split.segments.map((segment) => segment.text)).toEqual(['hello', 'world']);
     expect(removeSubtitleSegment(split, split.segments[0]!.id).segments).toHaveLength(1);
+  });
+
+  it('resolves document defaults and cue overrides without losing explicit zero values', () => {
+    const resolved = resolveSubtitleStyle(
+      { fontFamily: 'Inter', fontSize: 64, backgroundEnabled: true },
+      { fontSize: 32, backgroundEnabled: false, strokeWidth: 0 },
+    );
+
+    expect(resolved).toMatchObject({
+      fontFamily: 'Inter',
+      fontSize: 32,
+      fontWeight: 700,
+      backgroundEnabled: false,
+      strokeWidth: 0,
+      foreground: '#ffffff',
+    });
+  });
+
+  it('treats missing and legacy null cue fields as inheritance', () => {
+    const legacyCue = { foreground: null, fontSize: undefined } as unknown as Partial<
+      import('./subtitle.types.js').SubtitleStyle
+    >;
+    const resolved = resolveSubtitleStyle({ foreground: '#22cc88', fontSize: 72 }, legacyCue);
+
+    expect(resolved.foreground).toBe('#22cc88');
+    expect(resolved.fontSize).toBe(72);
   });
 });
 

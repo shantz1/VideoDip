@@ -49,6 +49,20 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
 
 ## Done (this session, 2026-07-17)
 
+- **Subtitle System v2 foundation and professional styling (2026-07-18)** —
+  kept `SubtitleDocument` separate from timeline media clips while making it
+  mandatory in autosave, centralized missing-field inheritance into one domain
+  resolver, migrated legacy nullable styles at the project boundary, and made
+  clip/transition/subtitle selection exclusive. Added the complete typography,
+  appearance, background, stroke, shadow, layout and transform style surface;
+  a compact sectioned inspector with controlled transactional color inputs and
+  an extensible offline font catalog with previews/recent fonts; and a stage
+  interaction overlay with selection, hover, pointer drag, aspect-correct
+  mapping, safe-area guides, snapping, reset and registered keyboard nudges.
+  Preview interactions remain transient and create one subtitle-history entry
+  only when committed. Verified by domain/schema/renderer/desktop regression
+  coverage and the workspace gate.
+
 - **Slider inspector + square output (2026-07-18)** — replaced continuous
   transform, opacity, animation, transition and audio text-only controls with
   accessible sliders plus compact precision values. A drag commits once, so

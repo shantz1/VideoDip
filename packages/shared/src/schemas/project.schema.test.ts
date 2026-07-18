@@ -129,7 +129,54 @@ describe('projectSnapshotSchema', () => {
       },
     });
     expect(parsed.success).toBe(true);
-    if (parsed.success) expect(parsed.data.subtitles.defaultStyle.animation).toBe('fade');
+    if (parsed.success) {
+      expect(parsed.data.subtitles.defaultStyle).toMatchObject({
+        fontFamily: 'sans-serif',
+        fontSize: 48,
+        fontWeight: 400,
+        foreground: '#ffffff',
+        background: '#000000',
+        backgroundOpacity: 0.72,
+        strokeWidth: 0,
+        positionX: 0.5,
+        positionY: 0.88,
+        rotation: 0,
+        scale: 1,
+        animation: 'fade',
+      });
+    }
+  });
+
+  it('round-trips the complete professional subtitle style surface', () => {
+    const style = {
+      ...projectSnapshotSchema.parse(SNAPSHOT).subtitles.defaultStyle,
+      fontFamily: 'system-ui',
+      fontSize: 72,
+      fontWeight: 800,
+      letterSpacing: 1.5,
+      lineHeight: 1.1,
+      opacity: 0.9,
+      backgroundEnabled: false,
+      backgroundOpacity: 0.5,
+      strokeColor: '#ff00aa',
+      strokeWidth: 3,
+      shadowColor: '#001122',
+      shadowBlur: 12,
+      shadowOffsetX: 4,
+      shadowOffsetY: 6,
+      shadowOpacity: 0.65,
+      maxWidth: 0.8,
+      padding: 20,
+      borderRadius: 14,
+      rotation: -8,
+      scale: 1.25,
+    };
+    const parsed = projectSnapshotSchema.parse({
+      ...SNAPSHOT,
+      subtitles: { version: 1, language: null, segments: [], defaultStyle: style },
+    });
+
+    expect(parsed.subtitles.defaultStyle).toEqual(style);
   });
 
   it('rejects unsafe clip transform and metadata values', () => {

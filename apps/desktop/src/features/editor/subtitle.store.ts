@@ -19,7 +19,8 @@ import { useProjectStore } from './project.store';
 
 interface SubtitleState {
   readonly document: SubtitleDocument;
-  readonly selectedSegmentId: SegmentId | null;
+  /** Ephemeral renderer-only style drafts; never serialized or added to history. */
+  readonly stylePreviews: Readonly<Record<string, Partial<SubtitleStyle>>>;
   readonly past: readonly SubtitleDocument[];
   readonly future: readonly SubtitleDocument[];
   readonly select: (id: SegmentId | null) => void;
@@ -33,6 +34,12 @@ interface SubtitleState {
   readonly replace: (document: SubtitleDocument) => void;
   readonly setLanguage: (language: string | null) => void;
   readonly setDefaultStyle: (style: SubtitleStyle) => void;
+  /** Updates a live style draft without touching document history. */
+  readonly previewStyle: (id: SegmentId, patch: Partial<SubtitleStyle>) => void;
+  /** Applies the accumulated style draft as one undoable document edit. */
+  readonly commitStylePreview: (id: SegmentId) => Result<SubtitleDocument>;
+  /** Discards an uncommitted style draft. */
+  readonly cancelStylePreview: (id: SegmentId) => void;
   readonly undo: () => void;
   readonly redo: () => void;
   readonly reset: () => void;
@@ -42,11 +49,11 @@ interface SubtitleState {
 /** Undoable subtitle editor state kept independent of React and host adapters. */
 export const useSubtitleStore = create<SubtitleState>()((set, get) => ({
   document: createSubtitleDocument(),
-  selectedSegmentId: null,
+  stylePreviews: {},
   past: [],
   future: [],
 
-  select: (selectedSegmentId) => set({ selectedSegmentId }),
+  select: (selectedSegmentId) => useEditorStore.getState().selectSubtitle(selectedSegmentId),
   add: (input) => {
     const result = addSegment(get().document, input);
     if (result.ok) {
@@ -77,20 +84,41 @@ export const useSubtitleStore = create<SubtitleState>()((set, get) => ({
   setLanguage: (language) => {
     const normalizedLanguage = language?.trim() || null;
     if (normalizedLanguage === get().document.language) return;
-    commit({ ...get().document, language: normalizedLanguage }, get().selectedSegmentId);
+    commit(
+      { ...get().document, language: normalizedLanguage },
+      useEditorStore.getState().selectedSubtitleId,
+    );
   },
   setDefaultStyle: (defaultStyle) =>
-    commit({ ...get().document, defaultStyle }, get().selectedSegmentId),
+    commit({ ...get().document, defaultStyle }, useEditorStore.getState().selectedSubtitleId),
+  previewStyle: (id, patch) =>
+    set((state) => ({
+      stylePreviews: {
+        ...state.stylePreviews,
+        [id]: { ...state.stylePreviews[id], ...patch },
+      },
+    })),
+  commitStylePreview: (id) => {
+    const preview = get().stylePreviews[id];
+    if (!preview) return { ok: true, value: get().document };
+    set((state) => ({ stylePreviews: withoutPreview(state.stylePreviews, id) }));
+    const result = updateSegment(get().document, id, { style: preview });
+    if (result.ok) commit(result.value, id);
+    return result;
+  },
+  cancelStylePreview: (id) =>
+    set((state) => ({ stylePreviews: withoutPreview(state.stylePreviews, id) })),
   undo: () => {
     const state = get();
     const previous = state.past.at(-1);
     if (!previous) return;
     set({
       document: previous,
-      selectedSegmentId: previous.segments[0]?.id ?? null,
+      stylePreviews: {},
       past: state.past.slice(0, -1),
       future: [state.document, ...state.future],
     });
+    useEditorStore.getState().selectSubtitle(previous.segments[0]?.id ?? null);
     useEditorStore.getState().markDirty();
   },
   redo: () => {
@@ -99,18 +127,21 @@ export const useSubtitleStore = create<SubtitleState>()((set, get) => ({
     if (!next) return;
     set({
       document: next,
-      selectedSegmentId: next.segments[0]?.id ?? null,
+      stylePreviews: {},
       past: [...state.past, state.document],
       future,
     });
+    useEditorStore.getState().selectSubtitle(next.segments[0]?.id ?? null);
     useEditorStore.getState().markDirty();
   },
   reset: () => {
-    set({ document: createSubtitleDocument(), selectedSegmentId: null, past: [], future: [] });
+    set({ document: createSubtitleDocument(), stylePreviews: {}, past: [], future: [] });
+    useEditorStore.getState().selectSubtitle(null);
     syncDuration(createSubtitleDocument());
   },
   load: (document) => {
-    set({ document, selectedSegmentId: null, past: [], future: [] });
+    set({ document, stylePreviews: {}, past: [], future: [] });
+    useEditorStore.getState().selectSubtitle(null);
     syncDuration(document);
   },
 }));
@@ -119,12 +150,22 @@ function commit(document: SubtitleDocument, selectedSegmentId: SegmentId | null)
   const state = useSubtitleStore.getState();
   useSubtitleStore.setState({
     document,
-    selectedSegmentId,
+    stylePreviews: {},
     past: [...state.past, state.document],
     future: [],
   });
+  useEditorStore.getState().selectSubtitle(selectedSegmentId);
   useEditorStore.getState().markDirty();
   syncDuration(document);
+}
+
+function withoutPreview(
+  previews: Readonly<Record<string, Partial<SubtitleStyle>>>,
+  id: SegmentId,
+): Readonly<Record<string, Partial<SubtitleStyle>>> {
+  const next = { ...previews };
+  delete next[id];
+  return next;
 }
 
 function syncDuration(document: SubtitleDocument): void {

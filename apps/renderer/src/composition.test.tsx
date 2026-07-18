@@ -29,6 +29,37 @@ const SETTINGS = {
   durationInFrames: 300,
 };
 
+const SUBTITLE_STYLE = {
+  fontFamily: 'sans-serif',
+  fontSize: 48,
+  fontWeight: 700,
+  isItalic: false,
+  isUnderlined: false,
+  letterSpacing: 0,
+  lineHeight: 1.2,
+  foreground: '#ffffff',
+  opacity: 1,
+  backgroundEnabled: true,
+  background: '#000000',
+  backgroundOpacity: 0.72,
+  strokeColor: '#000000',
+  strokeWidth: 0,
+  shadowColor: '#000000',
+  shadowBlur: 0,
+  shadowOffsetX: 0,
+  shadowOffsetY: 0,
+  shadowOpacity: 0,
+  alignment: 'center' as const,
+  maxWidth: 0.9,
+  padding: 14,
+  borderRadius: 8,
+  positionX: 0.5,
+  positionY: 0.88,
+  rotation: 0,
+  scale: 1,
+  animation: 'fade' as const,
+};
+
 const clip = (overrides: Partial<CompositionClip> = {}): CompositionClip => ({
   id: 'clip-a',
   trackKind: 'plugin:overlay',
@@ -180,24 +211,48 @@ describe('VideoDip composition contract', () => {
             durationInFrames: 30,
             text: 'Hello world',
             words: [],
-            style: {
-              fontFamily: null,
-              fontSize: null,
-              foreground: null,
-              background: null,
-              isBold: true,
-              isItalic: false,
-              isUnderlined: false,
-              alignment: 'center',
-              positionX: 0.5,
-              positionY: 0.88,
-              animation: 'fade',
-            },
+            style: SUBTITLE_STYLE,
           },
         ]}
         settings={SETTINGS}
       />,
     );
     expect(markup).toContain('Hello world');
+  });
+
+  it('renders professional subtitle appearance and transforms without fallbacks', () => {
+    const markup = renderToStaticMarkup(
+      <VideoDipComposition
+        clips={[]}
+        subtitles={[
+          {
+            id: 'styled-caption',
+            startFrame: 0,
+            durationInFrames: 30,
+            text: 'Styled',
+            words: [],
+            style: {
+              ...SUBTITLE_STYLE,
+              opacity: 0.8,
+              backgroundOpacity: 0.5,
+              strokeColor: '#ff00aa',
+              strokeWidth: 3,
+              shadowOpacity: 0.6,
+              shadowBlur: 12,
+              shadowOffsetX: 4,
+              shadowOffsetY: 6,
+              rotation: 12,
+              scale: 1.25,
+            },
+          },
+        ]}
+        settings={SETTINGS}
+      />,
+    );
+
+    expect(markup).toContain('rotate(12deg) scale(1.25)');
+    expect(markup).toContain('-webkit-text-stroke:3px #ff00aa');
+    expect(markup).toContain('rgba(0, 0, 0, 0.5)');
+    expect(markup).toContain('text-shadow:4px 6px 12px rgba(0, 0, 0, 0.6)');
   });
 });

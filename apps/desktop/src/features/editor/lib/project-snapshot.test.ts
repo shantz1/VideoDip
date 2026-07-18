@@ -1,5 +1,6 @@
 import { type ProjectId } from '@videodip/shared';
 import { createTimeline } from '@videodip/timeline';
+import { createSubtitleDocument } from '@videodip/subtitle-engine';
 import { describe, expect, it } from 'vitest';
 import { buildProjectSnapshot } from './project-snapshot';
 
@@ -9,6 +10,7 @@ const source = {
   aspectRatio: '9:16' as const,
   timeline: createTimeline(),
   mediaItems: [],
+  subtitles: createSubtitleDocument(),
   createdAt: '2026-07-17T10:00:00.000Z',
   updatedAt: '2026-07-17T10:01:00.000Z',
 };

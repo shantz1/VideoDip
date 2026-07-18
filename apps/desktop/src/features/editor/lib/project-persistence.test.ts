@@ -1,5 +1,6 @@
-import { ok, projectSnapshotSchema, type ProjectRepository } from '@videodip/shared';
+import { ms, ok, projectSnapshotSchema, type ProjectRepository } from '@videodip/shared';
 import { createTimeline } from '@videodip/timeline';
+import { addSubtitleSegment, createSubtitleDocument } from '@videodip/subtitle-engine';
 import { describe, expect, it, vi } from 'vitest';
 import { loadLatestProject, saveProjectState } from './project-persistence';
 
@@ -51,6 +52,13 @@ describe('loadLatestProject', () => {
 describe('saveProjectState', () => {
   it('validates and saves a versioned snapshot', async () => {
     let saved: typeof snapshot | undefined;
+    const subtitleResult = addSubtitleSegment(createSubtitleDocument('en'), {
+      start: ms(0),
+      end: ms(1000),
+      text: 'Persist me',
+      style: { foreground: '#12ab34' },
+    });
+    if (!subtitleResult.ok) throw new Error(subtitleResult.error.message);
     const save: Repository['save'] = async (project) => {
       saved = project;
       return ok(undefined);
@@ -61,11 +69,16 @@ describe('saveProjectState', () => {
       aspectRatio: snapshot.aspectRatio,
       timeline: createTimeline(),
       mediaItems: [],
+      subtitles: subtitleResult.value,
       createdAt: snapshot.createdAt,
       updatedAt: snapshot.updatedAt,
     });
 
     expect(result.ok).toBe(true);
     expect(saved).toMatchObject({ version: 1, id: snapshot.id });
+    expect(saved?.subtitles.segments[0]).toMatchObject({
+      text: 'Persist me',
+      style: { foreground: '#12ab34' },
+    });
   });
 });

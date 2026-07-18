@@ -15,20 +15,62 @@ import type {
   SubtitleWord,
 } from './subtitle.types.js';
 
-/** Neutral subtitle style; rendering templates may override every nullable field. */
+/**
+ * Canonical renderer fallback and new-document subtitle style.
+ *
+ * This is the only fallback in the subtitle pipeline. Document defaults are
+ * resolved over it, then cue overrides are resolved over the document. The
+ * resulting style is complete before it crosses a renderer boundary.
+ */
 export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
-  fontFamily: null,
-  fontSize: null,
-  foreground: null,
-  background: null,
-  isBold: false,
+  fontFamily: 'sans-serif',
+  fontSize: 48,
+  fontWeight: 700,
   isItalic: false,
   isUnderlined: false,
+  letterSpacing: 0,
+  lineHeight: 1.2,
+  foreground: '#ffffff',
+  opacity: normalized(1),
+  backgroundEnabled: true,
+  background: '#000000',
+  backgroundOpacity: normalized(0.72),
+  strokeColor: '#000000',
+  strokeWidth: 0,
+  shadowColor: '#000000',
+  shadowBlur: 0,
+  shadowOffsetX: 0,
+  shadowOffsetY: 0,
+  shadowOpacity: normalized(0),
   alignment: 'center',
+  maxWidth: normalized(0.9),
+  padding: 14,
+  borderRadius: 8,
   positionX: normalized(0.5),
   positionY: normalized(0.88),
+  rotation: 0,
+  scale: 1,
   animation: 'fade',
 };
+
+/**
+ * Resolves document and cue overrides into the complete renderer contract.
+ *
+ * Missing keys inherit. Explicit values, including `false`, `0`, and an
+ * empty-looking color such as transparent CSS, are preserved. The defensive
+ * null check exists only for legacy in-memory data that has not crossed the
+ * current persistence schema yet.
+ */
+export function resolveSubtitleStyle(
+  documentStyle: Partial<SubtitleStyle>,
+  cueStyle: Partial<SubtitleStyle> = {},
+  previewStyle: Partial<SubtitleStyle> = {},
+): SubtitleStyle {
+  return resolveStyleLayer(
+    resolveStyleLayer(resolveStyleLayer(DEFAULT_SUBTITLE_STYLE, documentStyle), cueStyle),
+    previewStyle,
+  );
+}
 
 /** Creates an empty language-aware subtitle document. */
 export function createSubtitleDocument(language: string | null = null): SubtitleDocument {
@@ -226,4 +268,15 @@ function textFromWords(words: readonly SubtitleWord[], fallback: string): string
     .filter(Boolean)
     .join(' ');
   return text || fallback;
+}
+
+function resolveStyleLayer(base: SubtitleStyle, override: Partial<SubtitleStyle>): SubtitleStyle {
+  const resolved = { ...base };
+  for (const key of Object.keys(DEFAULT_SUBTITLE_STYLE) as (keyof SubtitleStyle)[]) {
+    const value = override[key];
+    if (value !== undefined && value !== null) {
+      Object.assign(resolved, { [key]: value });
+    }
+  }
+  return resolved;
 }

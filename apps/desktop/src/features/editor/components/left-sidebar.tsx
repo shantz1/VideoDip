@@ -496,7 +496,7 @@ const CAPTION_TEMPLATES = [
     description: 'Centered, readable captions.',
     surface: 'subtitle',
     parameters: [],
-    payload: { fontSize: 48, isBold: true, positionY: 0.88 },
+    payload: { fontSize: 48, fontWeight: 700, positionY: 0.88 },
   },
   {
     version: 1,
@@ -505,7 +505,7 @@ const CAPTION_TEMPLATES = [
     description: 'Smaller captions with more breathing room.',
     surface: 'subtitle',
     parameters: [],
-    payload: { fontSize: 38, isBold: false, positionY: 0.84 },
+    payload: { fontSize: 38, fontWeight: 400, positionY: 0.84 },
   },
   {
     version: 1,
@@ -514,7 +514,7 @@ const CAPTION_TEMPLATES = [
     description: 'Large bold captions for short-form video.',
     surface: 'subtitle',
     parameters: [],
-    payload: { fontSize: 64, isBold: true, positionY: 0.78 },
+    payload: { fontSize: 64, fontWeight: 700, positionY: 0.78 },
   },
 ] as const;
 

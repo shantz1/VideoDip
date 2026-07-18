@@ -1,7 +1,7 @@
 'use client';
 
 import type { ExportPresetId, MediaItem } from '@videodip/media-engine';
-import type { ClipId, Milliseconds, ProjectId, TransitionId } from '@videodip/shared';
+import type { ClipId, Milliseconds, ProjectId, SegmentId, TransitionId } from '@videodip/shared';
 import { ms } from '@videodip/shared';
 import { create } from 'zustand';
 
@@ -99,6 +99,8 @@ export interface EditorState {
   readonly selectedClipId: ClipId | null;
   /** The transition cut currently edited in the Effects inspector. */
   readonly selectedTransitionId: TransitionId | null;
+  /** The subtitle cue currently edited in the subtitle inspector and stage. */
+  readonly selectedSubtitleId: SegmentId | null;
 
   // --- Project ---
   /** Null until a project is created or loaded. */
@@ -144,6 +146,7 @@ export interface EditorState {
   readonly setExportPreset: (id: ExportPresetId) => void;
   readonly selectClip: (clipId: ClipId | null) => void;
   readonly selectTransition: (transitionId: TransitionId | null) => void;
+  readonly selectSubtitle: (segmentId: SegmentId | null) => void;
   readonly addMediaItems: (items: readonly MediaItem[]) => void;
   /** Marks the in-memory project as changed since its last persisted state. */
   readonly markDirty: () => void;
@@ -200,6 +203,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
 
   selectedClipId: null,
   selectedTransitionId: null,
+  selectedSubtitleId: null,
 
   projectId: null,
   projectName: null,
@@ -271,11 +275,20 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     ),
   setExportPreset: (exportPresetId) => set({ exportPresetId }),
 
-  selectClip: (selectedClipId) => set({ selectedClipId, selectedTransitionId: null }),
+  selectClip: (selectedClipId) =>
+    set({
+      selectedClipId,
+      ...(selectedClipId === null ? {} : { selectedTransitionId: null, selectedSubtitleId: null }),
+    }),
   selectTransition: (selectedTransitionId) =>
     set({
       selectedTransitionId,
-      ...(selectedTransitionId === null ? {} : { selectedClipId: null }),
+      ...(selectedTransitionId === null ? {} : { selectedClipId: null, selectedSubtitleId: null }),
+    }),
+  selectSubtitle: (selectedSubtitleId) =>
+    set({
+      selectedSubtitleId,
+      ...(selectedSubtitleId === null ? {} : { selectedClipId: null, selectedTransitionId: null }),
     }),
 
   addMediaItems: (items) => {
@@ -314,6 +327,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       editRevision: state.editRevision + 1,
       selectedClipId: null,
       selectedTransitionId: null,
+      selectedSubtitleId: null,
       mediaItems: [],
     }));
   },
@@ -327,6 +341,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       mediaItems: project.mediaItems,
       selectedClipId: null,
       selectedTransitionId: null,
+      selectedSubtitleId: null,
       isPlaying: false,
       playhead: ms(0),
       isDirty: false,

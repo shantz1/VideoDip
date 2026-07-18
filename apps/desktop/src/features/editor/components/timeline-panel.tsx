@@ -72,7 +72,7 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
   const removeClip = useProjectStore((s) => s.removeClip);
   const removeTransition = useProjectStore((s) => s.removeTransition);
   const splitClip = useProjectStore((s) => s.splitClip);
-  const selectedSubtitleId = useSubtitleStore((state) => state.selectedSegmentId);
+  const selectedSubtitleId = useEditorStore((state) => state.selectedSubtitleId);
   const subtitleDocument = useSubtitleStore((state) => state.document);
   const selectSubtitle = useSubtitleStore((state) => state.select);
   const removeSubtitle = useSubtitleStore((state) => state.remove);
@@ -230,7 +230,7 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
   const splitClip = useProjectStore((s) => s.splitClip);
   const addTransition = useProjectStore((s) => s.addTransition);
   const subtitleDocument = useSubtitleStore((state) => state.document);
-  const selectedSubtitleId = useSubtitleStore((state) => state.selectedSegmentId);
+  const selectedSubtitleId = useEditorStore((state) => state.selectedSubtitleId);
   const selectSubtitle = useSubtitleStore((state) => state.select);
   const splitSubtitle = useSubtitleStore((state) => state.split);
   const setInspectorTab = useEditorStore((state) => state.setInspectorTab);

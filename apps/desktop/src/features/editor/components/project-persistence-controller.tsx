@@ -6,6 +6,7 @@ import { useEditorHost } from '../host/editor-host';
 import { restoreProjectSnapshot } from '../lib/project-commands';
 import { loadLatestProject, saveProjectState } from '../lib/project-persistence';
 import { useProjectStore } from '../project.store';
+import { useSubtitleStore } from '../subtitle.store';
 
 const AUTOSAVE_DELAY_MS = 750;
 
@@ -22,6 +23,7 @@ export function ProjectPersistenceController() {
   const editRevision = useEditorStore((state) => state.editRevision);
   const isDirty = useEditorStore((state) => state.isDirty);
   const document = useProjectStore((state) => state.document);
+  const subtitles = useSubtitleStore((state) => state.document);
 
   useEffect(() => {
     let active = true;
@@ -78,6 +80,7 @@ export function ProjectPersistenceController() {
           aspectRatio,
           timeline: document,
           mediaItems,
+          subtitles,
           createdAt: projectCreatedAt,
           updatedAt: new Date().toISOString(),
         },
@@ -108,6 +111,7 @@ export function ProjectPersistenceController() {
     projectName,
     projects,
     ready,
+    subtitles,
   ]);
 
   if (failure === null) return null;

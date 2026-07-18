@@ -40,4 +40,41 @@ describe('subtitle store', () => {
     expect(useSubtitleStore.getState().past).toEqual([]);
     expect(useSubtitleStore.getState().future).toEqual([]);
   });
+
+  it('previews many style updates and commits them as one undo entry', () => {
+    const added = useSubtitleStore.getState().add({
+      id: 'styled' as SegmentId,
+      start: ms(0),
+      end: ms(1000),
+      text: 'Styled',
+    });
+    if (!added.ok) throw new Error(added.error.message);
+    const historyBefore = useSubtitleStore.getState().past.length;
+
+    useSubtitleStore.getState().previewStyle('styled' as SegmentId, { foreground: '#112233' });
+    useSubtitleStore.getState().previewStyle('styled' as SegmentId, { foreground: '#445566' });
+    useSubtitleStore.getState().previewStyle('styled' as SegmentId, { foreground: '#778899' });
+
+    expect(useSubtitleStore.getState().past).toHaveLength(historyBefore);
+    expect(useSubtitleStore.getState().document.segments[0]?.style.foreground).toBeUndefined();
+
+    const committed = useSubtitleStore.getState().commitStylePreview('styled' as SegmentId);
+    expect(committed.ok).toBe(true);
+    expect(useSubtitleStore.getState().past).toHaveLength(historyBefore + 1);
+    expect(useSubtitleStore.getState().document.segments[0]?.style.foreground).toBe('#778899');
+
+    useSubtitleStore.getState().undo();
+    expect(useSubtitleStore.getState().document.segments[0]?.style.foreground).toBeUndefined();
+  });
+
+  it('selects subtitles exclusively through the editor selection state', () => {
+    useEditorStore.getState().selectClip('clip-a' as never);
+    useSubtitleStore.getState().select('cue-a' as SegmentId);
+
+    expect(useEditorStore.getState()).toMatchObject({
+      selectedClipId: null,
+      selectedTransitionId: null,
+      selectedSubtitleId: 'cue-a',
+    });
+  });
 });

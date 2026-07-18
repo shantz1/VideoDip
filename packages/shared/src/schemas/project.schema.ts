@@ -197,21 +197,110 @@ const projectTransitionSchema = z.strictObject({
     .default({}),
 });
 
-const subtitleStyleSchema = z.strictObject({
-  fontFamily: z.string().trim().min(1).max(256).nullable(),
-  fontSize: z.number().finite().positive().max(1000).nullable(),
-  foreground: z.string().trim().min(1).max(128).nullable(),
-  background: z.string().trim().min(1).max(128).nullable(),
-  isBold: z.boolean(),
-  isItalic: z.boolean(),
-  isUnderlined: z.boolean(),
-  alignment: z.enum(['start', 'center', 'end']),
-  positionX: normalizedSchema,
-  positionY: normalizedSchema,
-  animation: z.enum(['none', 'fade', 'pop', 'slide-up']).default('fade'),
-});
+const subtitleColorSchema = z.string().trim().min(1).max(128);
+const subtitleFontFamilySchema = z.string().trim().min(1).max(256);
+const subtitleFontSizeSchema = z.number().finite().min(8).max(1000);
+const subtitleFontWeightSchema = z.number().int().min(100).max(900);
+const subtitlePixelSchema = z.number().finite().min(0).max(1000);
+const subtitleOffsetSchema = z.number().finite().min(-1000).max(1000);
 
-const subtitleStylePatchSchema = subtitleStyleSchema.partial();
+function omitNullishValues<T extends Record<string, unknown>>(
+  value: T,
+): { [Key in keyof T]?: Exclude<T[Key], null | undefined> } {
+  return Object.fromEntries(
+    Object.entries(value).filter((entry) => entry[1] !== null && entry[1] !== undefined),
+  ) as { [Key in keyof T]?: Exclude<T[Key], null | undefined> };
+}
+
+const subtitleStylePatchSchema = z
+  .strictObject({
+    fontFamily: subtitleFontFamilySchema.nullable().optional(),
+    fontSize: subtitleFontSizeSchema.nullable().optional(),
+    fontWeight: subtitleFontWeightSchema.optional(),
+    /** Legacy v1 input; normalized to numeric fontWeight below. */
+    isBold: z.boolean().optional(),
+    isItalic: z.boolean().optional(),
+    isUnderlined: z.boolean().optional(),
+    letterSpacing: z.number().finite().min(-100).max(100).optional(),
+    lineHeight: z.number().finite().min(0.5).max(5).optional(),
+    foreground: subtitleColorSchema.nullable().optional(),
+    opacity: normalizedSchema.optional(),
+    backgroundEnabled: z.boolean().optional(),
+    background: subtitleColorSchema.nullable().optional(),
+    backgroundOpacity: normalizedSchema.optional(),
+    strokeColor: subtitleColorSchema.optional(),
+    strokeWidth: subtitlePixelSchema.optional(),
+    shadowColor: subtitleColorSchema.optional(),
+    shadowBlur: subtitlePixelSchema.optional(),
+    shadowOffsetX: subtitleOffsetSchema.optional(),
+    shadowOffsetY: subtitleOffsetSchema.optional(),
+    shadowOpacity: normalizedSchema.optional(),
+    alignment: z.enum(['start', 'center', 'end']).optional(),
+    maxWidth: normalizedSchema.optional(),
+    padding: subtitlePixelSchema.optional(),
+    borderRadius: subtitlePixelSchema.optional(),
+    positionX: normalizedSchema.optional(),
+    positionY: normalizedSchema.optional(),
+    rotation: z.number().finite().min(-36_000).max(36_000).optional(),
+    scale: z.number().finite().positive().max(100).optional(),
+    animation: z.enum(['none', 'fade', 'pop', 'slide-up']).optional(),
+  })
+  .transform(({ isBold, ...style }) => ({
+    ...omitNullishValues(style),
+    ...(style.fontWeight === undefined && isBold !== undefined
+      ? { fontWeight: isBold ? 700 : 400 }
+      : {}),
+  }));
+
+const subtitleStyleSchema = z
+  .strictObject({
+    fontFamily: z.preprocess(
+      (value) => (value === null ? undefined : value),
+      subtitleFontFamilySchema.default('sans-serif'),
+    ),
+    fontSize: z.preprocess(
+      (value) => (value === null ? undefined : value),
+      subtitleFontSizeSchema.default(48),
+    ),
+    fontWeight: subtitleFontWeightSchema.optional(),
+    /** Legacy v1 input; normalized to numeric fontWeight below. */
+    isBold: z.boolean().optional(),
+    isItalic: z.boolean().default(false),
+    isUnderlined: z.boolean().default(false),
+    letterSpacing: z.number().finite().min(-100).max(100).default(0),
+    lineHeight: z.number().finite().min(0.5).max(5).default(1.2),
+    foreground: z.preprocess(
+      (value) => (value === null ? undefined : value),
+      subtitleColorSchema.default('#ffffff'),
+    ),
+    opacity: normalizedSchema.default(normalized(1)),
+    backgroundEnabled: z.boolean().default(true),
+    background: z.preprocess(
+      (value) => (value === null ? undefined : value),
+      subtitleColorSchema.default('#000000'),
+    ),
+    backgroundOpacity: normalizedSchema.default(normalized(0.72)),
+    strokeColor: subtitleColorSchema.default('#000000'),
+    strokeWidth: subtitlePixelSchema.default(0),
+    shadowColor: subtitleColorSchema.default('#000000'),
+    shadowBlur: subtitlePixelSchema.default(0),
+    shadowOffsetX: subtitleOffsetSchema.default(0),
+    shadowOffsetY: subtitleOffsetSchema.default(0),
+    shadowOpacity: normalizedSchema.default(normalized(0)),
+    alignment: z.enum(['start', 'center', 'end']).default('center'),
+    maxWidth: normalizedSchema.default(normalized(0.9)),
+    padding: subtitlePixelSchema.default(14),
+    borderRadius: subtitlePixelSchema.default(8),
+    positionX: normalizedSchema.default(normalized(0.5)),
+    positionY: normalizedSchema.default(normalized(0.88)),
+    rotation: z.number().finite().min(-36_000).max(36_000).default(0),
+    scale: z.number().finite().positive().max(100).default(1),
+    animation: z.enum(['none', 'fade', 'pop', 'slide-up']).default('fade'),
+  })
+  .transform(({ isBold, ...style }) => ({
+    ...style,
+    fontWeight: style.fontWeight ?? (isBold === false ? 400 : 700),
+  }));
 
 const subtitleWordSchema = z
   .strictObject({
@@ -294,16 +383,33 @@ const emptySubtitleDocument = {
   language: null,
   segments: [],
   defaultStyle: {
-    fontFamily: null,
-    fontSize: null,
-    foreground: null,
-    background: null,
-    isBold: false,
+    fontFamily: 'sans-serif',
+    fontSize: 48,
+    fontWeight: 700,
     isItalic: false,
     isUnderlined: false,
+    letterSpacing: 0,
+    lineHeight: 1.2,
+    foreground: '#ffffff',
+    opacity: normalized(1),
+    backgroundEnabled: true,
+    background: '#000000',
+    backgroundOpacity: normalized(0.72),
+    strokeColor: '#000000',
+    strokeWidth: 0,
+    shadowColor: '#000000',
+    shadowBlur: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
+    shadowOpacity: normalized(0),
     alignment: 'center' as const,
+    maxWidth: normalized(0.9),
+    padding: 14,
+    borderRadius: 8,
     positionX: normalized(0.5),
     positionY: normalized(0.88),
+    rotation: 0,
+    scale: 1,
     animation: 'fade' as const,
   },
 };

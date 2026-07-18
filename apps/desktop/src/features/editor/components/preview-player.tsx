@@ -5,8 +5,9 @@ import { framesToMs, msToFrames, type AssetId } from '@videodip/shared';
 import { getDuration } from '@videodip/timeline';
 import { VideoDipComposition } from '@videodip/renderer';
 import { useEffect, useMemo, useRef } from 'react';
-import { useEditorStore, type AspectRatio } from '../editor.store';
+import { useEditorStore } from '../editor.store';
 import { useEditorHost } from '../host/editor-host';
+import { COMPOSITION_SIZE } from '../lib/composition-size';
 import {
   PROJECT_FPS,
   toCompositionClips,
@@ -22,14 +23,6 @@ import { useSubtitleStore } from '../subtitle.store';
  * size. Becomes a project-level export setting later; the preview only needs
  * the ratio to be right.
  */
-const COMPOSITION_SIZE: Record<AspectRatio, { width: number; height: number }> = {
-  '9:16': { width: 1080, height: 1920 },
-  '3:4': { width: 1080, height: 1440 },
-  '4:5': { width: 1080, height: 1350 },
-  '1:1': { width: 1080, height: 1080 },
-  '16:9': { width: 1920, height: 1080 },
-};
-
 /**
  * The real preview: `@remotion/player` rendering `@videodip/renderer`'s
  * composition from the live timeline document.
@@ -55,6 +48,7 @@ export function PreviewPlayer() {
 
   const documentValue = useProjectStore((s) => s.document);
   const subtitleDocument = useSubtitleStore((state) => state.document);
+  const subtitleStylePreviews = useSubtitleStore((state) => state.stylePreviews);
   const mediaItems = useEditorStore((s) => s.mediaItems);
   const aspectRatio = useEditorStore((s) => s.aspectRatio);
   const isPlaying = useEditorStore((s) => s.isPlaying);
@@ -84,7 +78,10 @@ export function PreviewPlayer() {
     1,
     msToFrames(Math.max(getDuration(documentValue), subtitleDuration) as never, PROJECT_FPS),
   );
-  const subtitles = useMemo(() => toCompositionSubtitles(subtitleDocument), [subtitleDocument]);
+  const subtitles = useMemo(
+    () => toCompositionSubtitles(subtitleDocument, PROJECT_FPS, subtitleStylePreviews),
+    [subtitleDocument, subtitleStylePreviews],
+  );
 
   // store.isPlaying → player transport.
   useEffect(() => {

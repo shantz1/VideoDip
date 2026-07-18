@@ -195,7 +195,7 @@ describe('layout', () => {
 });
 
 describe('selection', () => {
-  it('keeps clip and transition selections mutually exclusive', () => {
+  it('keeps clip, transition, and subtitle selections mutually exclusive', () => {
     state().selectClip('clip-1' as never);
     expect(state().selectedClipId).toBe('clip-1');
 
@@ -205,6 +205,18 @@ describe('selection', () => {
 
     state().selectClip('clip-2' as never);
     expect(state().selectedTransitionId).toBeNull();
+
+    state().selectSubtitle('subtitle-1' as never);
+    expect(state().selectedSubtitleId).toBe('subtitle-1');
+    expect(state().selectedClipId).toBeNull();
+    expect(state().selectedTransitionId).toBeNull();
+
+    state().selectTransition('transition-2' as never);
+    expect(state().selectedSubtitleId).toBeNull();
+
+    state().selectSubtitle('subtitle-2' as never);
+    state().selectClip('clip-3' as never);
+    expect(state().selectedSubtitleId).toBeNull();
 
     state().selectClip(null);
     expect(state().selectedClipId).toBeNull();
