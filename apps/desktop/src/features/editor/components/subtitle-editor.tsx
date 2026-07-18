@@ -422,7 +422,7 @@ function formatTime(value: number): string {
 
 const controlClassName = cn(
   'h-7 min-w-0 rounded-md border border-border-default bg-surface-inset px-2',
-  'text-xs text-text-primary focus-visible:outline-2 focus-visible:outline-[--color-border-focus]',
+  'text-xs text-text-primary focus-visible:outline-2 focus-visible:outline-(--color-border-focus)',
 );
 
 function Field({

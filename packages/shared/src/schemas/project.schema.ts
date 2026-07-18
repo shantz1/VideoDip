@@ -16,7 +16,7 @@ import {
 export const PROJECT_SNAPSHOT_VERSION = 1 as const;
 
 /** Project canvas ratios supported by the current editor and export path. */
-export const projectAspectRatioSchema = z.enum(['9:16', '3:4', '4:5', '16:9']);
+export const projectAspectRatioSchema = z.enum(['9:16', '3:4', '4:5', '1:1', '16:9']);
 
 const mediaStreamMetadataSchema = z.strictObject({
   index: z.number().int().nonnegative(),

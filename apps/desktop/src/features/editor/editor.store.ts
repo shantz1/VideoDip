@@ -35,7 +35,7 @@ export type SidebarPanel =
  * than in the timeline domain model's per-clip data, same reasoning as
  * `zoom`: it describes how the project is viewed, not what the project is.
  */
-export type AspectRatio = '9:16' | '3:4' | '4:5' | '16:9';
+export type AspectRatio = '9:16' | '3:4' | '4:5' | '1:1' | '16:9';
 
 /** Filmora-style panel arrangements optimized for wide or vertical editing. */
 export type WorkspaceLayout = 'video' | 'short-video';
@@ -64,6 +64,12 @@ export interface EditorState {
   readonly inspectorTab: InspectorTab;
   readonly inspectorCollapsed: boolean;
   readonly workspaceLayout: WorkspaceLayout;
+  /**
+   * User-dragged width of the short-video stage pane in pixels; `null`
+   * means the layout's proportional default. UI state, not project state —
+   * a window-geometry preference does not belong in a saved project.
+   */
+  readonly stagePaneWidth: number | null;
 
   // --- Transport ---
   readonly isPlaying: boolean;
@@ -120,6 +126,8 @@ export interface EditorState {
   readonly toggleInspector: () => void;
   /** Applies a complete panel arrangement without editing project content. */
   readonly setWorkspaceLayout: (layout: WorkspaceLayout) => void;
+  /** Resizes the stage pane; clamped, `null` restores the layout default. */
+  readonly setStagePaneWidth: (width: number | null) => void;
   readonly play: () => void;
   readonly pause: () => void;
   readonly togglePlayback: () => void;
@@ -165,12 +173,20 @@ const ZOOM_STEP = 1.3;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
+/**
+ * Stage pane drag bounds in pixels. The floor keeps the preview usable; the
+ * ceiling keeps the tools and timeline from being squeezed out entirely.
+ */
+const STAGE_PANE_MIN = 240;
+const STAGE_PANE_MAX = 1280;
+
 export const useEditorStore = create<EditorState>()((set, get) => ({
   activePanel: 'media',
   sidebarCollapsed: false,
   inspectorTab: 'properties',
   inspectorCollapsed: false,
   workspaceLayout: 'short-video',
+  stagePaneWidth: null,
 
   isPlaying: false,
   playhead: ms(0),
@@ -212,6 +228,12 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       workspaceLayout,
       sidebarCollapsed: false,
       inspectorCollapsed: false,
+    }),
+
+  setStagePaneWidth: (width) =>
+    set({
+      stagePaneWidth:
+        width === null ? null : Math.round(clamp(width, STAGE_PANE_MIN, STAGE_PANE_MAX)),
     }),
 
   play: () => set({ isPlaying: true }),

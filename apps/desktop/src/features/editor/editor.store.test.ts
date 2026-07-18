@@ -96,6 +96,9 @@ describe('aspect ratio', () => {
 
     state().setAspectRatio('4:5');
     expect(state().aspectRatio).toBe('4:5');
+
+    state().setAspectRatio('1:1');
+    expect(state().aspectRatio).toBe('1:1');
   });
 
   it('does not manufacture an edit when the ratio is unchanged', () => {
@@ -174,6 +177,20 @@ describe('layout', () => {
 
     expect(state().inspectorCollapsed).toBe(false);
     expect(state().inspectorTab).toBe('audio');
+  });
+
+  it('clamps the dragged stage pane width to usable bounds', () => {
+    state().setStagePaneWidth(500);
+    expect(state().stagePaneWidth).toBe(500);
+
+    state().setStagePaneWidth(10);
+    expect(state().stagePaneWidth).toBe(240);
+
+    state().setStagePaneWidth(99_999);
+    expect(state().stagePaneWidth).toBe(1280);
+
+    state().setStagePaneWidth(null);
+    expect(state().stagePaneWidth).toBeNull();
   });
 });
 

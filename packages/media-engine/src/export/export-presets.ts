@@ -10,8 +10,6 @@ export type ExportPresetId =
 export interface ExportPreset {
   readonly id: ExportPresetId;
   readonly name: string;
-  readonly width: number;
-  readonly height: number;
   readonly fps: 30 | 60;
   readonly crf: number;
   readonly encoderPreset: 'veryfast' | 'fast' | 'medium';
@@ -23,8 +21,6 @@ export const EXPORT_PRESETS: readonly ExportPreset[] = [
   {
     id: 'tiktok-vertical',
     name: 'TikTok 1080p',
-    width: 1080,
-    height: 1920,
     fps: 30,
     crf: 18,
     encoderPreset: 'veryfast',
@@ -33,8 +29,6 @@ export const EXPORT_PRESETS: readonly ExportPreset[] = [
   {
     id: 'reels-vertical',
     name: 'Instagram Reels 1080p',
-    width: 1080,
-    height: 1920,
     fps: 30,
     crf: 18,
     encoderPreset: 'veryfast',
@@ -43,8 +37,6 @@ export const EXPORT_PRESETS: readonly ExportPreset[] = [
   {
     id: 'shorts-vertical',
     name: 'YouTube Shorts 1080p60',
-    width: 1080,
-    height: 1920,
     fps: 60,
     crf: 17,
     encoderPreset: 'fast',
@@ -53,8 +45,6 @@ export const EXPORT_PRESETS: readonly ExportPreset[] = [
   {
     id: 'social-square',
     name: 'Social Square',
-    width: 1080,
-    height: 1080,
     fps: 30,
     crf: 18,
     encoderPreset: 'veryfast',
@@ -63,8 +53,6 @@ export const EXPORT_PRESETS: readonly ExportPreset[] = [
   {
     id: 'landscape-hd',
     name: 'Landscape Full HD',
-    width: 1920,
-    height: 1080,
     fps: 30,
     crf: 18,
     encoderPreset: 'fast',

@@ -14,7 +14,7 @@ import {
 } from '@videodip/timeline';
 import { Button, cn } from '@videodip/ui';
 import { MousePointerClick, SlidersHorizontal, Sparkles, Trash2 } from 'lucide-react';
-import { useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditorStore, type InspectorTab } from '../editor.store';
 import { useProjectStore } from '../project.store';
 import { EmptyState } from './empty-state';
@@ -81,9 +81,9 @@ export function RightInspector() {
             onKeyDown={(event) => handleTabKeyDown(event, index)}
             className={cn(
               'shrink-0 rounded-sm px-2 py-1 text-xs whitespace-nowrap',
-              'transition-colors duration-[--duration-fast]',
+              'transition-colors duration-(--duration-fast)',
               'focus-visible:outline-2 focus-visible:outline-offset-[-2px]',
-              'focus-visible:outline-[--color-border-focus]',
+              'focus-visible:outline-(--color-border-focus)',
               tab === id
                 ? 'bg-surface-inset text-text-primary'
                 : 'text-text-tertiary hover:text-text-secondary',
@@ -197,20 +197,14 @@ function TransitionControls({ transition }: { readonly transition: ClipTransitio
       </InspectorField>
 
       <InspectorField label="Duration" suffix="s">
-        <input
-          key={`${transition.id}-${transition.duration}`}
-          type="number"
-          min="0.05"
+        <SliderControl
+          label="Transition duration"
+          value={transition.duration / 1000}
+          min={Math.min(0.05, maximumDuration / 1000)}
           max={maximumDuration / 1000}
-          step="0.05"
-          defaultValue={(transition.duration / 1000).toFixed(2)}
-          onBlur={(event) => {
-            const seconds = event.currentTarget.valueAsNumber;
-            if (Number.isFinite(seconds) && seconds > 0) {
-              apply({ duration: ms(Math.round(seconds * 1000)) });
-            }
-          }}
-          className={controlClassName}
+          step={0.05}
+          precision={2}
+          onCommit={(seconds) => apply({ duration: ms(Math.round(seconds * 1000)) })}
         />
       </InspectorField>
 
@@ -367,57 +361,64 @@ function ClipTransformControls({ clip }: { clip: Clip }) {
       )}
 
       <TransformNumberField
-        clip={clip}
         property="positionX"
         label="Position X"
         suffix="%"
+        min={-200}
+        max={200}
+        step={1}
         displayValue={clip.transform.positionX * 100}
         onApply={applyTransform}
       />
       <TransformNumberField
-        clip={clip}
         property="positionY"
         label="Position Y"
         suffix="%"
+        min={-200}
+        max={200}
+        step={1}
         displayValue={clip.transform.positionY * 100}
         onApply={applyTransform}
       />
       <TransformNumberField
-        clip={clip}
         property="scaleX"
         label="Scale X"
         suffix="×"
         min={0.01}
+        max={4}
+        step={0.01}
         displayValue={clip.transform.scaleX}
         onApply={applyTransform}
       />
       <TransformNumberField
-        clip={clip}
         property="scaleY"
         label="Scale Y"
         suffix="×"
         min={0.01}
+        max={4}
+        step={0.01}
         displayValue={clip.transform.scaleY}
         onApply={applyTransform}
       />
       <TransformNumberField
-        clip={clip}
         property="rotation"
         label="Rotation"
         suffix="°"
+        min={-180}
+        max={180}
+        step={1}
         displayValue={clip.transform.rotation}
         onApply={applyTransform}
       />
       <InspectorField label="Opacity" suffix="%">
-        <input
-          key={`${clip.id}-opacity-${clip.opacity}`}
-          type="number"
-          min="0"
-          max="100"
-          step="1"
-          defaultValue={Math.round(clip.opacity * 100)}
-          onBlur={(event) => applyOpacity(event.currentTarget.valueAsNumber)}
-          className={controlClassName}
+        <SliderControl
+          label="Opacity"
+          value={Math.round(clip.opacity * 100)}
+          min={0}
+          max={100}
+          step={1}
+          precision={0}
+          onCommit={applyOpacity}
         />
       </InspectorField>
       <InspectorField label="Blend">
@@ -454,32 +455,34 @@ function ClipTransformControls({ clip }: { clip: Clip }) {
 }
 
 function TransformNumberField({
-  clip,
   property,
   label,
   suffix,
   displayValue,
   min,
+  max,
+  step,
   onApply,
 }: {
-  readonly clip: Clip;
   readonly property: keyof ClipTransform;
   readonly label: string;
   readonly suffix: string;
   readonly displayValue: number;
-  readonly min?: number;
+  readonly min: number;
+  readonly max: number;
+  readonly step: number;
   readonly onApply: (property: keyof ClipTransform, value: number) => void;
 }) {
   return (
     <InspectorField label={label} suffix={suffix}>
-      <input
-        key={`${clip.id}-${property}-${displayValue}`}
-        type="number"
+      <SliderControl
+        label={label}
+        value={displayValue}
         min={min}
-        step="0.01"
-        defaultValue={Number(displayValue.toFixed(2))}
-        onBlur={(event) => onApply(property, event.currentTarget.valueAsNumber)}
-        className={controlClassName}
+        max={max}
+        step={step}
+        precision={step < 1 ? 2 : 0}
+        onCommit={(value) => onApply(property, value)}
       />
     </InspectorField>
   );
@@ -494,6 +497,29 @@ const ANIMATION_PROPERTIES: readonly ClipAnimationProperty[] = [
   'opacity',
 ];
 
+const ANIMATION_RANGES: Readonly<
+  Record<
+    ClipAnimationProperty,
+    {
+      readonly min: number;
+      readonly max: number;
+      readonly step: number;
+      readonly precision: number;
+    }
+  >
+> = {
+  positionX: { min: -2, max: 2, step: 0.01, precision: 2 },
+  positionY: { min: -2, max: 2, step: 0.01, precision: 2 },
+  scaleX: { min: 0.01, max: 4, step: 0.01, precision: 2 },
+  scaleY: { min: 0.01, max: 4, step: 0.01, precision: 2 },
+  rotation: { min: -180, max: 180, step: 1, precision: 0 },
+  opacity: { min: 0, max: 1, step: 0.01, precision: 2 },
+};
+
+function getClipAnimationValue(clip: Clip, property: ClipAnimationProperty): number {
+  return property === 'opacity' ? clip.opacity : clip.transform[property];
+}
+
 function ClipAnimationControls({ clip }: { readonly clip: Clip }) {
   const setClipAnimation = useProjectStore((state) => state.setClipAnimation);
   const [property, setProperty] = useState<ClipAnimationProperty>('opacity');
@@ -501,6 +527,7 @@ function ClipAnimationControls({ clip }: { readonly clip: Clip }) {
   const [value, setValue] = useState(1);
   const [easing, setEasing] = useState<ClipKeyframeEasing>('linear');
   const [error, setError] = useState<string | null>(null);
+  const valueRange = ANIMATION_RANGES[property];
 
   const apply = (animation: Clip['animation']) => {
     const result = setClipAnimation(clip.id, animation);
@@ -552,7 +579,11 @@ function ClipAnimationControls({ clip }: { readonly clip: Clip }) {
       <InspectorField label="Property">
         <select
           value={property}
-          onChange={(event) => setProperty(event.target.value as ClipAnimationProperty)}
+          onChange={(event) => {
+            const nextProperty = event.target.value as ClipAnimationProperty;
+            setProperty(nextProperty);
+            setValue(getClipAnimationValue(clip, nextProperty));
+          }}
           className={controlClassName}
         >
           {ANIMATION_PROPERTIES.map((item) => (
@@ -563,23 +594,25 @@ function ClipAnimationControls({ clip }: { readonly clip: Clip }) {
         </select>
       </InspectorField>
       <InspectorField label="Offset" suffix="s">
-        <input
-          type="number"
-          min="0"
-          max={clip.duration / 1000}
-          step="0.01"
+        <SliderControl
+          label="Keyframe offset"
           value={offsetSeconds}
-          onChange={(event) => setOffsetSeconds(event.currentTarget.valueAsNumber)}
-          className={controlClassName}
+          min={0}
+          max={clip.duration / 1000}
+          step={0.01}
+          precision={2}
+          onCommit={setOffsetSeconds}
         />
       </InspectorField>
       <InspectorField label="Value">
-        <input
-          type="number"
-          step="0.01"
+        <SliderControl
+          label={`${property} keyframe value`}
           value={value}
-          onChange={(event) => setValue(event.currentTarget.valueAsNumber)}
-          className={controlClassName}
+          min={valueRange.min}
+          max={valueRange.max}
+          step={valueRange.step}
+          precision={valueRange.precision}
+          onCommit={setValue}
         />
       </InspectorField>
       <InspectorField label="Easing">
@@ -654,44 +687,36 @@ function ClipAudioControls({ clip }: { readonly clip: Clip }) {
         </p>
       )}
       <InspectorField label="Volume" suffix="%">
-        <input
-          key={`${clip.id}-volume-${clip.audio.volume}`}
-          type="number"
-          min="0"
-          max="100"
-          step="1"
-          defaultValue={Math.round(clip.audio.volume * 100)}
-          onBlur={(event) => {
-            const value = event.currentTarget.valueAsNumber;
-            if (Number.isFinite(value) && value >= 0 && value <= 100) {
-              apply({ volume: normalized(value / 100) });
-            }
-          }}
-          className={controlClassName}
+        <SliderControl
+          label="Volume"
+          value={Math.round(clip.audio.volume * 100)}
+          min={0}
+          max={100}
+          step={1}
+          precision={0}
+          onCommit={(value) => apply({ volume: normalized(value / 100) })}
         />
       </InspectorField>
       <InspectorField label="Fade in" suffix="s">
-        <input
-          key={`${clip.id}-fade-in-${clip.audio.fadeIn}`}
-          type="number"
-          min="0"
+        <SliderControl
+          label="Audio fade in"
+          value={clip.audio.fadeIn / 1000}
+          min={0}
           max={clip.duration / 1000}
-          step="0.01"
-          defaultValue={(clip.audio.fadeIn / 1000).toFixed(2)}
-          onBlur={(event) => applyFade('fadeIn', event.currentTarget.valueAsNumber)}
-          className={controlClassName}
+          step={0.01}
+          precision={2}
+          onCommit={(seconds) => applyFade('fadeIn', seconds)}
         />
       </InspectorField>
       <InspectorField label="Fade out" suffix="s">
-        <input
-          key={`${clip.id}-fade-out-${clip.audio.fadeOut}`}
-          type="number"
-          min="0"
+        <SliderControl
+          label="Audio fade out"
+          value={clip.audio.fadeOut / 1000}
+          min={0}
           max={clip.duration / 1000}
-          step="0.01"
-          defaultValue={(clip.audio.fadeOut / 1000).toFixed(2)}
-          onBlur={(event) => applyFade('fadeOut', event.currentTarget.valueAsNumber)}
-          className={controlClassName}
+          step={0.01}
+          precision={2}
+          onCommit={(seconds) => applyFade('fadeOut', seconds)}
         />
       </InspectorField>
       <label className="text-text-tertiary flex items-center gap-2 text-xs">
@@ -715,9 +740,89 @@ function ClipAudioControls({ clip }: { readonly clip: Clip }) {
   );
 }
 
+function SliderControl({
+  label,
+  value,
+  min,
+  max,
+  step,
+  precision,
+  onCommit,
+}: {
+  readonly label: string;
+  readonly value: number;
+  readonly min: number;
+  readonly max: number;
+  readonly step: number;
+  readonly precision: number;
+  readonly onCommit: (value: number) => void;
+}) {
+  const clamp = (candidate: number) => Math.min(max, Math.max(min, candidate));
+  const [draft, setDraft] = useState(() => clamp(value));
+
+  useEffect(() => setDraft(Math.min(max, Math.max(min, value))), [max, min, value]);
+
+  const commit = () => {
+    const next = Number(clamp(draft).toFixed(precision));
+    setDraft(next);
+    if (next !== Number(clamp(value).toFixed(precision))) onCommit(next);
+  };
+
+  return (
+    <span className="grid min-w-0 grid-cols-[minmax(4rem,1fr)_3.25rem] items-center gap-2">
+      <input
+        type="range"
+        aria-label={`${label} slider`}
+        aria-valuetext={draft.toFixed(precision)}
+        min={min}
+        max={max}
+        step={step}
+        value={draft}
+        onChange={(event) => setDraft(event.currentTarget.valueAsNumber)}
+        onPointerUp={commit}
+        onKeyUp={(event) => {
+          if (
+            [
+              'ArrowLeft',
+              'ArrowRight',
+              'ArrowUp',
+              'ArrowDown',
+              'Home',
+              'End',
+              'PageUp',
+              'PageDown',
+            ].includes(event.key)
+          ) {
+            commit();
+          }
+        }}
+        onBlur={commit}
+        className="accent-accent min-w-0 cursor-pointer"
+      />
+      <input
+        type="number"
+        aria-label={`${label} value`}
+        min={min}
+        max={max}
+        step={step}
+        value={draft.toFixed(precision)}
+        onChange={(event) => {
+          const next = event.currentTarget.valueAsNumber;
+          if (Number.isFinite(next)) setDraft(next);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.currentTarget.blur();
+        }}
+        onBlur={commit}
+        className={cn(controlClassName, 'w-full px-1 text-right font-mono tabular-nums')}
+      />
+    </span>
+  );
+}
+
 const controlClassName = cn(
   'h-7 min-w-0 rounded-md border border-border-default bg-surface-inset px-2',
-  'text-xs text-text-primary focus-visible:outline-2 focus-visible:outline-[--color-border-focus]',
+  'text-xs text-text-primary focus-visible:outline-2 focus-visible:outline-(--color-border-focus)',
 );
 
 function InspectorField({

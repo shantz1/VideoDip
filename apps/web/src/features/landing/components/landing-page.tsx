@@ -19,7 +19,7 @@ export function LandingPage() {
           the transition uses token durations, so reduced-motion zeroes it. */}
       <a
         href="#main-content"
-        className="border-border-default bg-surface-overlay text-text-primary fixed top-4 left-4 z-[var(--z-toast)] -translate-y-20 rounded-md border px-4 py-2 text-sm transition-transform duration-[--duration-fast] ease-[--ease-out-quad] focus-visible:translate-y-0"
+        className="border-border-default bg-surface-overlay text-text-primary fixed top-4 left-4 z-[var(--z-toast)] -translate-y-20 rounded-md border px-4 py-2 text-sm transition-transform duration-(--duration-fast) ease-(--ease-out-quad) focus-visible:translate-y-0"
       >
         Skip to content
       </a>

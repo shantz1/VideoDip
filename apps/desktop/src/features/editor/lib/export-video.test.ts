@@ -1,7 +1,7 @@
 import { ms, type AssetId, type TrackId } from '@videodip/shared';
 import { addClip, addTransition, createTimeline, createTrack } from '@videodip/timeline';
 import { describe, expect, it } from 'vitest';
-import { exportFrameSize, toExportClips } from './export-video';
+import { exportFrameSize, resolveExportSettings, toExportClips } from './export-video';
 
 const ASSET_A = 'asset-a' as AssetId;
 const ASSET_B = 'asset-b' as AssetId;
@@ -21,9 +21,23 @@ describe('exportFrameSize', () => {
     ['9:16', 1080, 1920],
     ['3:4', 1080, 1440],
     ['4:5', 1080, 1350],
+    ['1:1', 1080, 1080],
     ['16:9', 1920, 1080],
   ] as const)('%s exports at %dx%d (1080 short edge)', (ratio, width, height) => {
     expect(exportFrameSize(ratio)).toEqual({ width, height });
+  });
+
+  it('keeps the selected aspect ratio when an encoding preset is selected', () => {
+    expect(unwrap(resolveExportSettings('1:1', 'tiktok-vertical'))).toMatchObject({
+      width: 1080,
+      height: 1080,
+      fps: 30,
+    });
+    expect(unwrap(resolveExportSettings('16:9', 'social-square'))).toMatchObject({
+      width: 1920,
+      height: 1080,
+      fps: 30,
+    });
   });
 });
 

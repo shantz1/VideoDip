@@ -17,11 +17,11 @@ const buttonVariants = cva(
     'font-medium select-none',
     'rounded-md border border-transparent',
     'transition-[background-color,border-color,color,box-shadow,opacity]',
-    'duration-[--duration-fast] ease-[--ease-out-quad]',
+    'duration-(--duration-fast) ease-(--ease-out-quad)',
     // Focus ring is on every variant, unconditionally. Removing it is the
     // single most common accessibility regression in a design system.
     'focus-visible:outline-2 focus-visible:outline-offset-2',
-    'focus-visible:outline-[--color-border-focus]',
+    'focus-visible:outline-(--color-border-focus)',
     // `disabled:` alone does not cover the loading state, which uses
     // aria-disabled rather than the disabled attribute (see below).
     'disabled:pointer-events-none disabled:opacity-50',

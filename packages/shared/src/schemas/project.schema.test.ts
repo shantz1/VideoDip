@@ -42,6 +42,7 @@ const SNAPSHOT = {
 describe('projectSnapshotSchema', () => {
   it('accepts a valid versioned project snapshot', () => {
     expect(projectSnapshotSchema.safeParse(SNAPSHOT).success).toBe(true);
+    expect(projectSnapshotSchema.safeParse({ ...SNAPSHOT, aspectRatio: '1:1' }).success).toBe(true);
   });
 
   it('adds backward-compatible visual defaults to older v1 clips', () => {

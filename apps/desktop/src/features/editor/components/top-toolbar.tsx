@@ -195,7 +195,7 @@ export function TopToolbar() {
       {commandError && (
         <p
           role="alert"
-          className="vd-no-drag bg-danger-subtle text-danger absolute top-full right-3 z-[--z-toast] mt-2 max-w-72 rounded-md px-3 py-2 text-xs shadow-lg"
+          className="vd-no-drag bg-danger-subtle text-danger absolute top-full right-3 z-(--z-toast) mt-2 max-w-72 rounded-md px-3 py-2 text-xs shadow-lg"
         >
           {commandError}
         </p>
@@ -369,8 +369,8 @@ function ExportButton() {
               title={option.title}
               onClick={() => setEngine(option.id)}
               className={cn(
-                'rounded-sm px-2 py-1 text-xs transition-colors duration-[--duration-fast]',
-                'focus-visible:outline-2 focus-visible:outline-[--color-border-focus]',
+                'rounded-sm px-2 py-1 text-xs transition-colors duration-(--duration-fast)',
+                'focus-visible:outline-2 focus-visible:outline-(--color-border-focus)',
                 engine === option.id
                   ? 'bg-surface-raised text-text-primary shadow-sm'
                   : 'text-text-secondary hover:text-text-primary',
@@ -413,7 +413,7 @@ function ExportButton() {
           className="bg-surface-sunken absolute inset-x-0 -bottom-0.5 h-0.5 overflow-hidden rounded-full"
         >
           <span
-            className="bg-accent block h-full transition-[width] duration-[--duration-fast]"
+            className="bg-accent block h-full transition-[width] duration-(--duration-fast)"
             style={{ width: `${phase.fraction * 100}%` }}
           />
         </span>
@@ -422,7 +422,7 @@ function ExportButton() {
         <div
           role="alert"
           className={cn(
-            'absolute top-full right-0 z-[--z-dropdown] mt-2 w-72 rounded-md p-2',
+            'absolute top-full right-0 z-(--z-dropdown) mt-2 w-72 rounded-md p-2',
             'border-border-default bg-surface-overlay border shadow-lg',
           )}
         >
@@ -443,7 +443,32 @@ function ExportButton() {
 
 function ToolbarMenu({ menu }: { menu: MenuDefinition }) {
   return (
-    <details className="group relative">
+    <details
+      className="group relative"
+      // Menus are mutually exclusive: opening one closes its siblings —
+      // without this, every <details> stays open independently and the bar
+      // ends up with all six dropdowns overlapping.
+      onToggle={(event) => {
+        if (!event.currentTarget.open) return;
+        const container = event.currentTarget.parentElement;
+        if (container === null) return;
+        for (const sibling of container.querySelectorAll('details[open]')) {
+          if (sibling !== event.currentTarget) sibling.removeAttribute('open');
+        }
+      }}
+      // Clicking or tabbing anywhere outside closes the menu, matching how
+      // every native menubar behaves.
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          event.currentTarget.removeAttribute('open');
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || !event.currentTarget.open) return;
+        event.currentTarget.removeAttribute('open');
+        event.currentTarget.querySelector('summary')?.focus();
+      }}
+    >
       <summary
         className={cn(
           buttonVariants({ variant: 'ghost', size: 'sm' }),
@@ -455,7 +480,7 @@ function ToolbarMenu({ menu }: { menu: MenuDefinition }) {
       <div
         role="menu"
         className={cn(
-          'absolute top-full left-0 z-[--z-dropdown] mt-1 min-w-40 rounded-md p-1',
+          'absolute top-full left-0 z-(--z-dropdown) mt-1 min-w-40 rounded-md p-1',
           'border-border-default bg-surface-overlay border shadow-lg',
         )}
       >
@@ -472,7 +497,7 @@ function ToolbarMenu({ menu }: { menu: MenuDefinition }) {
             className={cn(
               'text-text-secondary flex w-full rounded-sm px-2 py-1.5 text-left text-xs',
               'hover:bg-surface-hover hover:text-text-primary',
-              'focus-visible:outline-2 focus-visible:outline-[--color-border-focus]',
+              'focus-visible:outline-2 focus-visible:outline-(--color-border-focus)',
               'disabled:text-text-disabled disabled:pointer-events-none',
             )}
           >

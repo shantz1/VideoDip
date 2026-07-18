@@ -7,6 +7,7 @@ import {
   getExportPreset,
   type ExportClip,
   type ExportPresetId,
+  type ExportSettings,
 } from '@videodip/media-engine';
 import { appError, err, ok, type AssetId, type Result } from '@videodip/shared';
 import type { TimelineDocument } from '@videodip/timeline';
@@ -33,6 +34,30 @@ export function exportFrameSize(aspectRatio: AspectRatio): {
   return w <= h
     ? { width: SHORT_EDGE, height: even((SHORT_EDGE * h) / w) }
     : { width: even((SHORT_EDGE * w) / h), height: SHORT_EDGE };
+}
+
+type ResolvedExportSettings = Omit<ExportSettings, 'outputPath'>;
+
+/** Combines the selected project geometry with an optional encoding-quality profile. */
+export function resolveExportSettings(
+  aspectRatio: AspectRatio,
+  presetId?: ExportPresetId,
+): Result<ResolvedExportSettings> {
+  const requestedPreset = presetId ? getExportPreset(presetId) : null;
+  if (requestedPreset && !requestedPreset.ok) return requestedPreset;
+
+  const encoding = requestedPreset?.value;
+  return ok({
+    ...exportFrameSize(aspectRatio),
+    fps: encoding?.fps ?? PROJECT_FPS,
+    ...(encoding
+      ? {
+          crf: encoding.crf,
+          encoderPreset: encoding.encoderPreset,
+          audioBitrate: encoding.audioBitrate,
+        }
+      : {}),
+  });
 }
 
 /**
@@ -127,25 +152,10 @@ export async function exportTimeline(
 
   // Validate the timeline before showing any dialog: asking the user to pick
   // a destination for an export that can never start is a small betrayal.
-  const requestedPreset = presetId ? getExportPreset(presetId) : null;
-  if (requestedPreset && !requestedPreset.ok) return requestedPreset;
-  const fallbackSize = exportFrameSize(aspectRatio);
-  const encoding = requestedPreset?.ok ? requestedPreset.value : undefined;
-  const { width, height } = encoding ?? fallbackSize;
-  const exportSettings = {
-    width,
-    height,
-    fps: encoding?.fps ?? PROJECT_FPS,
-    ...(encoding
-      ? {
-          crf: encoding.crf,
-          encoderPreset: encoding.encoderPreset,
-          audioBitrate: encoding.audioBitrate,
-        }
-      : {}),
-  };
+  const exportSettings = resolveExportSettings(aspectRatio, presetId);
+  if (!exportSettings.ok) return exportSettings;
   const probeArgs = buildExportArgs(clips.value, {
-    ...exportSettings,
+    ...exportSettings.value,
     outputPath: 'probe.mp4',
   });
   if (!probeArgs.ok) return probeArgs;
@@ -163,7 +173,7 @@ export async function exportTimeline(
   if (signal?.aborted) return ok(null);
 
   const args = buildExportArgs(clips.value, {
-    ...exportSettings,
+    ...exportSettings.value,
     outputPath,
   });
   if (!args.ok) return args;

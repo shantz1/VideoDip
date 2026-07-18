@@ -1,5 +1,5 @@
 import userEvent from '@testing-library/user-event';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 import { ms, type AssetId } from '@videodip/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -56,5 +56,38 @@ describe('transition inspector', () => {
     await user.click(screen.getByRole('button', { name: 'Remove transition' }));
     expect(useProjectStore.getState().document.transitions).toEqual([]);
     expect(useEditorStore.getState().selectedTransitionId).toBeNull();
+  });
+});
+
+describe('continuous inspector controls', () => {
+  it('uses sliders and creates one undo step when a drag is committed', () => {
+    const added = useProjectStore.getState().addClip({
+      trackId: 'video' as never,
+      assetId: 'asset-a' as AssetId,
+      start: ms(0),
+      duration: ms(2000),
+    });
+    if (!added.ok) throw new Error(added.error.message);
+    const clip = added.value.tracks.find((track) => track.kind === 'video')?.clips[0];
+    if (!clip) throw new Error('Expected a video clip.');
+    useEditorStore.getState().selectClip(clip.id);
+    useEditorStore.getState().setInspectorTab('transform');
+    const historyBeforeDrag = useProjectStore.getState().past.length;
+
+    render(createElement(RightInspector));
+
+    const opacity = screen.getByRole('slider', { name: 'Opacity slider' });
+    fireEvent.change(opacity, { target: { value: '40' } });
+    expect(
+      useProjectStore.getState().document.tracks.find((track) => track.kind === 'video')?.clips[0]
+        ?.opacity,
+    ).toBe(1);
+
+    fireEvent.pointerUp(opacity);
+    expect(
+      useProjectStore.getState().document.tracks.find((track) => track.kind === 'video')?.clips[0]
+        ?.opacity,
+    ).toBe(0.4);
+    expect(useProjectStore.getState().past).toHaveLength(historyBeforeDrag + 1);
   });
 });

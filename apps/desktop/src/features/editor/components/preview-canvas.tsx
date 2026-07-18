@@ -21,6 +21,7 @@ const ASPECT_RATIO_CSS: Record<AspectRatio, string> = {
   '9:16': '9 / 16',
   '3:4': '3 / 4',
   '4:5': '4 / 5',
+  '1:1': '1 / 1',
   '16:9': '16 / 9',
 };
 

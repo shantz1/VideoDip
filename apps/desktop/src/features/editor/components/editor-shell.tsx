@@ -15,6 +15,7 @@ import {
 } from './project-archive-controller';
 import { ProjectPersistenceController } from './project-persistence-controller';
 import { RightInspector } from './right-inspector';
+import { StageSplitter } from './stage-splitter';
 import { TimelinePanel } from './timeline-panel';
 import { TopToolbar } from './top-toolbar';
 import { UpdateBanner } from './update-banner';
@@ -56,6 +57,7 @@ function EditorShellContent() {
   const activePanel = useEditorStore((s) => s.activePanel);
   const isSidebarCollapsed = useEditorStore((s) => s.sidebarCollapsed);
   const workspaceLayout = useEditorStore((s) => s.workspaceLayout);
+  const stagePaneWidth = useEditorStore((s) => s.stagePaneWidth);
   const selectedClipId = useEditorStore((s) => s.selectedClipId);
   const selectedTransitionId = useEditorStore((s) => s.selectedTransitionId);
   const selectClip = useEditorStore((s) => s.selectClip);
@@ -267,14 +269,28 @@ function EditorShellContent() {
       <CommandPalette />
       <TopToolbar />
       <div
-        className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[minmax(0,1fr)_16rem]"
+        className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_16rem]"
         data-workspace-layout={workspaceLayout}
-        style={{ gridTemplateAreas: workspaceGridTemplate(workspaceLayout) }}
+        style={{
+          gridTemplateAreas: workspaceGridTemplate(workspaceLayout, stagePaneWidth).areas,
+          gridTemplateColumns: workspaceGridTemplate(workspaceLayout, stagePaneWidth).columns,
+        }}
       >
         <div className="min-h-0 overflow-hidden" style={{ gridArea: 'library' }}>
           <LeftSidebar />
         </div>
-        <div className="min-h-0 min-w-0" style={{ gridArea: 'preview' }}>
+        <div
+          className={
+            // The short-video stage sits flush against the inspector, whose
+            // border-l faces the library — so the separator (and its drag
+            // handle) lives here.
+            workspaceLayout === 'short-video'
+              ? 'border-border-subtle relative min-h-0 min-w-0 border-l'
+              : 'min-h-0 min-w-0'
+          }
+          style={{ gridArea: 'preview' }}
+        >
+          {workspaceLayout === 'short-video' && <StageSplitter />}
           <PreviewCanvas />
         </div>
         <div className="min-h-0 overflow-hidden" style={{ gridArea: 'inspector' }}>

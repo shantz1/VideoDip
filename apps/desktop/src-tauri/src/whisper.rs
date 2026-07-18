@@ -379,6 +379,13 @@ fn transcribe(
             // Non-speech tokens (music, noise) are the usual trigger for
             // whisper's repeated-character hallucination loops.
             "--suppress-nst".into(),
+            // whisper-cli defaults to 4 threads no matter the machine;
+            // matching the CPU roughly doubles throughput on 8+ core boxes.
+            "-t".into(),
+            transcription_thread_count(
+                std::thread::available_parallelism().map_or(4, |value| value.get()),
+            )
+            .to_string(),
         ];
         if let Some(prompt) = request.prompt.filter(|value| !value.trim().is_empty()) {
             args.extend(["--prompt".into(), prompt]);
@@ -540,6 +547,15 @@ fn model_root(app: &AppHandle) -> Result<PathBuf, String> {
         .map(|path| path.join(MODEL_DIRECTORY))
         .map_err(|error| error.to_string())
 }
+/// Worker threads for whisper-cli, from the machine's logical CPU count.
+///
+/// Two cores stay free so the editor UI never starves during a long
+/// transcription; the ceiling reflects whisper.cpp's memory-bound encoder,
+/// which stops scaling around eight threads.
+fn transcription_thread_count(available: usize) -> usize {
+    available.saturating_sub(2).clamp(4, 8)
+}
+
 fn runtime_path() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("VIDEODIP_WHISPER_CLI")
         .map(PathBuf::from)
@@ -595,6 +611,15 @@ mod tests {
         assert!(MODELS.iter().all(|model| !model.file.contains(".en")));
         assert!(model("small-q5_1").is_ok());
     }
+    #[test]
+    fn thread_count_leaves_headroom_and_respects_scaling_limits() {
+        assert_eq!(transcription_thread_count(2), 4);
+        assert_eq!(transcription_thread_count(4), 4);
+        assert_eq!(transcription_thread_count(8), 6);
+        assert_eq!(transcription_thread_count(12), 8);
+        assert_eq!(transcription_thread_count(32), 8);
+    }
+
     #[test]
     fn parses_native_progress_lines() {
         assert_eq!(

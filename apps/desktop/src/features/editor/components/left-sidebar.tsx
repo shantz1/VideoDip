@@ -8,6 +8,7 @@ import {
   type MediaItem,
 } from '@videodip/media-engine';
 import {
+  mediaLocatorSchema,
   ms,
   type ProjectId,
   type ProjectSummary,
@@ -43,6 +44,7 @@ import {
   renameSavedProject,
   startNewProject,
 } from '../lib/project-commands';
+import { flattenTimelineAudio } from '../lib/transcribe-timeline';
 import { transcriptionToSubtitles } from '../lib/transcription-to-subtitles';
 import { useProjectStore } from '../project.store';
 import { useSubtitleStore } from '../subtitle.store';
@@ -145,9 +147,9 @@ function RailButton({
       title={panel.label}
       className={cn(
         'group relative grid size-9 place-items-center rounded-md',
-        'transition-colors duration-[--duration-fast]',
+        'transition-colors duration-(--duration-fast)',
         'focus-visible:outline-2 focus-visible:outline-offset-[-2px]',
-        'focus-visible:outline-[--color-border-focus]',
+        'focus-visible:outline-(--color-border-focus)',
         active
           ? 'bg-surface-selected text-accent'
           : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary',
@@ -204,6 +206,9 @@ function PanelBody({ panel }: { panel: SidebarPanel }) {
   }
 }
 
+/** Sentinel id for the whole-timeline source in the transcription selector. */
+const TIMELINE_SOURCE = '__timeline__';
+
 function AiPanel() {
   const { transcription, transcriptionModels } = useEditorHost();
   const mediaItems = useEditorStore((state) => state.mediaItems);
@@ -235,9 +240,16 @@ function AiPanel() {
       }
     });
   }, [transcription]);
+  const hasTimelineClips = timeline.tracks.some((track) =>
+    track.clips.some((item) => item.isEnabled),
+  );
   useEffect(() => {
-    if (!assetId && mediaItems[0]) setAssetId(mediaItems[0].id);
-  }, [assetId, mediaItems]);
+    // Whole-timeline is the default because its timestamps land in timeline
+    // time and cover every clip; a lone imported file is the fallback.
+    if (assetId) return;
+    if (hasTimelineClips) setAssetId(TIMELINE_SOURCE);
+    else if (mediaItems[0]) setAssetId(mediaItems[0].id);
+  }, [assetId, hasTimelineClips, mediaItems]);
 
   const selectedModel = models.find((model) => model.id === modelId);
   const download = () => {
@@ -264,7 +276,72 @@ function AiPanel() {
       refresh();
     });
   };
+  /**
+   * Whole-timeline mode: flatten every audible clip to one WAV (clips
+   * delayed to their real positions), transcribe it once, and import the
+   * segments directly — the recognizer's timestamps are already timeline
+   * time, so multi-clip projects caption correctly with no offset math.
+   */
+  const generateFromTimeline = () => {
+    if (
+      subtitleDocument.segments.length > 0 &&
+      !window.confirm('Replace the current subtitles with this AI transcription?')
+    ) {
+      return;
+    }
+    transcriptionModels.select(modelId);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setError(null);
+    setPhase({ stage: 'Preparing timeline audio', progress: 0 });
+    const pathByAsset = new Map(mediaItems.map((item) => [item.id, String(item.locator)]));
+    const options = {
+      wordTimestamps: true,
+      ...(language === 'auto' ? {} : { language }),
+    };
+    void flattenTimelineAudio(
+      timeline,
+      (id) => pathByAsset.get(id),
+      (fraction) => setPhase({ stage: 'Preparing timeline audio', progress: fraction }),
+      controller.signal,
+    ).then(async (flattened) => {
+      if (!flattened.ok) {
+        setPhase(null);
+        abortRef.current = null;
+        setError(flattened.error.recovery);
+        return;
+      }
+      const result = await transcription.transcribe(
+        mediaLocatorSchema.parse(flattened.value.path),
+        options,
+        controller.signal,
+        (progress) => setPhase({ stage: progress.stage, progress: progress.progress }),
+      );
+      setPhase(null);
+      abortRef.current = null;
+      if (!result.ok) {
+        setError(result.error.recovery);
+        return;
+      }
+      const subtitles = transcriptionToSubtitles(result.value, {
+        start: ms(0),
+        sourceStart: ms(0),
+        duration: flattened.value.durationMs,
+      });
+      if (!subtitles.ok) {
+        setError(subtitles.error.recovery);
+        return;
+      }
+      replaceSubtitles(subtitles.value);
+      useEditorStore.getState().setInspectorTab('subtitle');
+    });
+  };
+
   const generate = () => {
+    if (assetId === TIMELINE_SOURCE) {
+      generateFromTimeline();
+      return;
+    }
     const media = mediaItems.find((item) => item.id === assetId);
     if (!media) return;
     const clip = timeline.tracks
@@ -334,6 +411,11 @@ function AiPanel() {
         onChange={(event) => setAssetId(event.target.value)}
         className="border-border-default bg-surface-inset h-8 rounded-md border px-2 text-xs"
       >
+        <option value={TIMELINE_SOURCE} disabled={!hasTimelineClips}>
+          {hasTimelineClips
+            ? 'Whole timeline (all audible clips)'
+            : 'Whole timeline — add clips first'}
+        </option>
         {mediaItems.map((item) => (
           <option key={item.id} value={item.id}>
             {item.name}
@@ -473,7 +555,7 @@ function TemplatesPanel() {
           key={template.id}
           type="button"
           onClick={() => apply(template)}
-          className="border-border-subtle hover:bg-surface-hover rounded-md border p-3 text-left focus-visible:outline-2 focus-visible:outline-[--color-border-focus]"
+          className="border-border-subtle hover:bg-surface-hover rounded-md border p-3 text-left focus-visible:outline-2 focus-visible:outline-(--color-border-focus)"
         >
           <span className="text-text-primary block text-sm font-medium">{template.name}</span>
           <span className="text-text-tertiary mt-0.5 block text-xs">{template.description}</span>
@@ -531,7 +613,7 @@ function SettingsPanel() {
       >
         {EXPORT_PRESETS.map((preset) => (
           <option key={preset.id} value={preset.id}>
-            {preset.name} · {preset.width}×{preset.height} · {preset.fps} fps
+            {preset.name} · project ratio · {preset.fps} fps
           </option>
         ))}
       </select>
@@ -539,7 +621,7 @@ function SettingsPanel() {
   );
 }
 
-const ASPECT_RATIOS: readonly AspectRatio[] = ['9:16', '3:4', '4:5', '16:9'];
+const ASPECT_RATIOS: readonly AspectRatio[] = ['9:16', '3:4', '4:5', '1:1', '16:9'];
 
 function AspectRatioSelector() {
   const aspectRatio = useEditorStore((s) => s.aspectRatio);
@@ -956,10 +1038,10 @@ function MediaPanel() {
         aria-disabled={isImporting || undefined}
         className={cn(
           'flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs',
-          'text-text-secondary transition-colors duration-[--duration-fast]',
+          'text-text-secondary transition-colors duration-(--duration-fast)',
           'hover:bg-surface-hover hover:text-text-primary',
           'focus-visible:outline-2 focus-visible:outline-offset-[-2px]',
-          'focus-visible:outline-[--color-border-focus]',
+          'focus-visible:outline-(--color-border-focus)',
         )}
       >
         <FolderOpen className="size-3.5" aria-hidden="true" />

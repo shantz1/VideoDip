@@ -337,7 +337,7 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
       {editError && (
         <p
           role="alert"
-          className="bg-danger-subtle text-danger sticky left-2 z-[--z-dropdown] float-left mt-1 rounded-md px-2 py-1 text-xs"
+          className="bg-danger-subtle text-danger sticky left-2 z-(--z-dropdown) float-left mt-1 rounded-md px-2 py-1 text-xs"
         >
           {editError}
         </p>
@@ -492,11 +492,11 @@ function TimelineTransitionControl({
       onClick={onActivate}
       className={cn(
         'absolute top-1/2 z-20 flex h-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-sm border',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[--color-border-focus]',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-border-focus)',
         transition
           ? 'border-accent bg-accent-subtle text-accent'
           : 'border-border-default bg-surface-overlay text-text-secondary opacity-0 group-hover/track:opacity-100 focus-visible:opacity-100',
-        selected && 'ring-offset-surface-base ring-2 ring-[--color-border-focus] ring-offset-1',
+        selected && 'ring-offset-surface-base ring-2 ring-(--color-border-focus) ring-offset-1',
       )}
       style={{ left: ((from.start + from.duration) / 1000) * zoom, width }}
     >
@@ -531,9 +531,9 @@ function TimelineSubtitleCue({
       onClick={onSelect}
       className={cn(
         'bg-track-subtitle text-2xs text-text-on-brand absolute top-1 bottom-1 overflow-hidden rounded-sm px-1.5 text-left',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[--color-border-focus]',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-border-focus)',
         selected
-          ? 'ring-offset-surface-base ring-2 ring-[--color-border-focus] ring-offset-1'
+          ? 'ring-offset-surface-base ring-2 ring-(--color-border-focus) ring-offset-1'
           : 'hover:brightness-110',
       )}
       style={{ left: (start / 1000) * zoom, width: Math.max(((end - start) / 1000) * zoom, 4) }}
@@ -661,12 +661,12 @@ function TimelineClip({
       aria-label={`${label}, ${(clip.duration / 1000).toFixed(2)} seconds`}
       className={cn(
         'group text-2xs text-text-on-brand absolute top-1 bottom-1 cursor-grab touch-none overflow-hidden rounded-sm px-1.5 text-left active:cursor-grabbing',
-        'transition-shadow duration-[--duration-fast]',
+        'transition-shadow duration-(--duration-fast)',
         'focus-visible:outline-2 focus-visible:outline-offset-2',
-        'focus-visible:outline-[--color-border-focus]',
+        'focus-visible:outline-(--color-border-focus)',
         color,
         selected
-          ? 'ring-offset-surface-base ring-2 ring-[--color-border-focus] ring-offset-1'
+          ? 'ring-offset-surface-base ring-2 ring-(--color-border-focus) ring-offset-1'
           : 'hover:brightness-110',
       )}
       // Guard against a sliver too thin to click at extreme zoom-out.
@@ -765,7 +765,7 @@ function Playhead({
     <div
       className={cn(
         'pointer-events-none absolute top-0 bottom-0 w-px',
-        'bg-timeline-playhead z-[--z-timeline-playhead]',
+        'bg-timeline-playhead z-(--z-timeline-playhead)',
       )}
       style={{ left: x }}
     >

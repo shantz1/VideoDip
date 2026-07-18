@@ -64,7 +64,7 @@ export function UpdateBanner({ checkDelayMs = 5000 }: { readonly checkDelayMs?: 
     <div
       role="status"
       aria-live="polite"
-      className="border-border-default bg-surface-overlay fixed right-4 bottom-4 z-[--z-toast] flex max-w-sm items-center gap-3 rounded-md border p-3 shadow-lg"
+      className="border-border-default bg-surface-overlay fixed right-4 bottom-4 z-(--z-toast) flex max-w-sm items-center gap-3 rounded-md border p-3 shadow-lg"
     >
       {state.phase === 'downloading' && (
         <>

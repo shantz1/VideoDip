@@ -53,7 +53,7 @@ export function CommandPalette() {
 
   return (
     <div
-      className="bg-surface-overlay/70 fixed inset-0 z-[--z-modal] flex items-start justify-center p-8 pt-24"
+      className="bg-surface-overlay/70 fixed inset-0 z-(--z-modal) flex items-start justify-center p-8 pt-24"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) setIsOpen(false);
@@ -116,7 +116,7 @@ export function CommandPalette() {
                   onClick={() => run(command)}
                   className={cn(
                     'flex w-full items-center gap-3 rounded-md px-3 py-2 text-left',
-                    'focus-visible:outline-2 focus-visible:outline-[--color-border-focus]',
+                    'focus-visible:outline-2 focus-visible:outline-(--color-border-focus)',
                     index === activeIndex ? 'bg-surface-selected' : 'hover:bg-surface-hover',
                     command.disabled && 'opacity-50',
                   )}
