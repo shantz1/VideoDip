@@ -1,0 +1,48 @@
+# Release pipeline (ADR-0010): pushing a vX.Y.Z tag builds, signs, and
+# publishes the Windows installer plus the latest.json update manifest that
+# tauri-plugin-updater consumes. The signing key is the
+# TAURI_SIGNING_PRIVATE_KEY repository secret — never a file in the repo.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  desktop-windows:
+    name: Windows desktop bundle
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: pnpm install --frozen-lockfile
+
+      # The release bundle ships the Whisper sidecar and its DLLs
+      # (tauri.release.conf.json externalBin/resources).
+      - run: pnpm ai:provision:windows
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        with:
+          projectPath: apps/desktop
+          args: --config src-tauri/tauri.release.conf.json
+          tagName: ${{ github.ref_name }}
+          releaseName: VideoDip ${{ github.ref_name }}
+          releaseDraft: true
+          includeUpdaterJson: true

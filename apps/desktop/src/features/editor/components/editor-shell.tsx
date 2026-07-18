@@ -17,6 +17,7 @@ import { ProjectPersistenceController } from './project-persistence-controller';
 import { RightInspector } from './right-inspector';
 import { TimelinePanel } from './timeline-panel';
 import { TopToolbar } from './top-toolbar';
+import { UpdateBanner } from './update-banner';
 
 /** How far the arrow keys move the playhead. Shift jumps a second. */
 const NUDGE_SMALL = ms(100);
@@ -262,6 +263,7 @@ function EditorShellContent() {
   return (
     <div className="vd-app-shell bg-surface-base text-text-primary flex h-screen flex-col overflow-hidden">
       <ProjectPersistenceController />
+      <UpdateBanner />
       <CommandPalette />
       <TopToolbar />
       <div

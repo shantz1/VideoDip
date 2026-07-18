@@ -49,6 +49,16 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
 
 ## Done (this session, 2026-07-17)
 
+- **Adjacent-clip transition pipeline (2026-07-18)** — added a persisted,
+  plugin-extensible transition model with adjacency and duration invariants,
+  timeline cut controls, Effects-inspector editing, shared Remotion preview,
+  and native FFmpeg export for crossfade, dip-to-black, slide and wipe styles.
+  Timeline edits reconcile or remove invalid transitions, unsupported plugin
+  kinds fail before the save dialog, and FFmpeg time bases are normalized to
+  prevent accidental frame duplication. Verified with all 27 workspace tasks
+  and 338 TypeScript tests plus real exact-duration FFmpeg smoke encodes for
+  every built-in transition.
+
 - **Filmora-style editor workspace layouts (2026-07-18)** — added top-toolbar
   Video Editing and Short Video presets that rearrange the complete editor:
   standard video gets a full-width lower timeline, while short-video editing
@@ -56,7 +66,8 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
   deliberately independent from the persisted project aspect ratio, does not
   create an autosave revision, and registers Ctrl/Cmd+Shift+L through the
   central shortcut registry. Verified by pure grid mapping, store, toolbar and
-  shortcut tests plus all 25 workspace tasks (315 TypeScript tests).
+  shortcut tests plus the latest all-workspace gate (27 tasks, 338 TypeScript
+  tests).
 
 - **Local multilingual AI subtitles (2026-07-18)** — accepted ADR-0007 and
   implemented the Windows CPU whisper.cpp sidecar path, verified runtime/model
@@ -67,8 +78,8 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
   now streams whisper.cpp's carriage-return progress updates immediately, and
   its full-JSON parser accepts zero-length control tokens while retaining strict
   timing for real segments. Cross-language accuracy fixtures and non-Windows/GPU
-  distribution remain queued. Verified with all 25 workspace tasks (315
-  TypeScript tests), 17 Rust tests, an optimized Next build, the pinned runtime
+  distribution remain queued. Verified with all 27 workspace tasks (338
+  TypeScript tests), 18 Rust tests, optimized desktop/web builds, the pinned runtime
   provisioning command, and an isolated Tauri build containing the sidecar and
   its runtime DLLs.
 

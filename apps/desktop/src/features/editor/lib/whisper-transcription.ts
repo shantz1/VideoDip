@@ -316,14 +316,64 @@ export function parseWhisperOutput(
     language: parsed.data.result.language,
     durationMs,
     segments: parsed.data.transcription
-      .map((segment) => ({
-        text: segment.text.trim(),
-        start: ms(segment.offsets.from),
-        end: ms(segment.offsets.to),
-        words: tokensToWords(segment.tokens ?? []),
-        ...(segment.speaker ? { speaker: segment.speaker } : {}),
-      }))
-      .filter((segment) => segment.text.length > 0 && segment.end > segment.start),
+      .map((segment) => {
+        const text = segment.text.trim();
+        const tokenWords = tokensToWords(segment.tokens ?? []);
+        // Token texts can carry U+FFFD where whisper.cpp split a multibyte
+        // character across BPE tokens; the segment text is whole, so word
+        // timing is rebuilt from it instead of shipping corrupted words.
+        const words = tokenWords.some((word) => word.text.includes('�'))
+          ? interpolateSegmentWords(text, segment.offsets.from, segment.offsets.to)
+          : tokenWords;
+        return {
+          text,
+          start: ms(segment.offsets.from),
+          end: ms(segment.offsets.to),
+          words,
+          ...(segment.speaker ? { speaker: segment.speaker } : {}),
+        };
+      })
+      .filter(
+        (segment) =>
+          segment.text.length > 0 &&
+          segment.end > segment.start &&
+          !isRepetitionHallucination(segment.text),
+      ),
+  });
+}
+
+/**
+ * Detects whisper's repetition-loop hallucinations ("ༀༀༀༀ…"), which the model
+ * produces on non-speech audio or a misdetected language.
+ *
+ * Real language never repeats one or two characters dozens of times; shipping
+ * such a segment as a subtitle is strictly worse than dropping it.
+ */
+function isRepetitionHallucination(text: string): boolean {
+  const characters = [...text.replace(/\s/gu, '')];
+  if (characters.length < 12) return false;
+  return new Set(characters).size / characters.length <= 0.1;
+}
+
+/**
+ * Distributes a segment's time span across its whitespace-separated words,
+ * proportionally to word length.
+ *
+ * Fallback for scripts whose token-level timestamps are unusable because the
+ * tokenizer split characters mid-byte; approximate per-word timing degrades
+ * far better than words rendered as replacement characters.
+ */
+function interpolateSegmentWords(text: string, from: number, to: number) {
+  const words = text.split(/\s+/u).filter((word) => word.length > 0);
+  const totalLength = words.reduce((sum, word) => sum + word.length, 0);
+  if (totalLength === 0 || to <= from) return [];
+  const span = to - from;
+  let elapsed = 0;
+  return words.map((word) => {
+    const start = from + (span * elapsed) / totalLength;
+    elapsed += word.length;
+    const end = from + (span * elapsed) / totalLength;
+    return { text: word, start: ms(Math.round(start)), end: ms(Math.round(end)) };
   });
 }
 

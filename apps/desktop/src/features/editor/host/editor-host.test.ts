@@ -43,6 +43,11 @@ function createHost(): EditorHost {
     },
     getMediaArtifact: vi.fn(),
     resolveMediaSource: (locator) => `resolved:${locator}`,
+    appUpdates: {
+      check: vi.fn(async () => ok(null)),
+      downloadAndInstall: vi.fn(async () => ok(undefined)),
+      restart: vi.fn(async () => ok(undefined)),
+    },
   };
 }
 

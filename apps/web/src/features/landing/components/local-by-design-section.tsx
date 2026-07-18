@@ -9,17 +9,17 @@ export function LocalByDesignSection() {
   return (
     <section
       aria-labelledby="principles-heading"
-      className="border-y border-border-subtle bg-surface-sunken px-6 py-20"
+      className="border-border-subtle bg-surface-sunken border-y px-6 py-20"
     >
       <div className="mx-auto max-w-5xl">
         <div className="mx-auto max-w-2xl text-center">
           <h2
             id="principles-heading"
-            className="font-display text-2xl font-semibold tracking-tight text-text-primary sm:text-3xl"
+            className="font-display text-text-primary text-2xl font-semibold tracking-tight sm:text-3xl"
           >
             Local by design
           </h2>
-          <p className="mt-4 text-md leading-relaxed text-text-secondary">
+          <p className="text-md text-text-secondary mt-4 leading-relaxed">
             Cloud editors meter your minutes and hold your footage. VideoDip inverts that deal.
           </p>
         </div>
@@ -28,13 +28,13 @@ export function LocalByDesignSection() {
             <li key={principle.title} className="flex items-start gap-4">
               <span
                 aria-hidden="true"
-                className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-subtle text-accent"
+                className="bg-accent-subtle text-accent inline-flex size-9 shrink-0 items-center justify-center rounded-lg"
               >
                 <principle.icon className="size-4.5" />
               </span>
               <div>
-                <h3 className="text-md font-medium text-text-primary">{principle.title}</h3>
-                <p className="mt-1 text-sm leading-relaxed text-text-secondary">
+                <h3 className="text-md text-text-primary font-medium">{principle.title}</h3>
+                <p className="text-text-secondary mt-1 text-sm leading-relaxed">
                   {principle.description}
                 </p>
               </div>

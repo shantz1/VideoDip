@@ -11,11 +11,11 @@ export function FeatureGrid() {
         <div className="mx-auto max-w-2xl text-center">
           <h2
             id="features-heading"
-            className="font-display text-2xl font-semibold tracking-tight text-text-primary sm:text-3xl"
+            className="font-display text-text-primary text-2xl font-semibold tracking-tight sm:text-3xl"
           >
             Already in the editor
           </h2>
-          <p className="mt-4 text-md leading-relaxed text-text-secondary">
+          <p className="text-md text-text-secondary mt-4 leading-relaxed">
             Not a roadmap — everything below is implemented and tested in the repository today.
           </p>
         </div>
@@ -23,16 +23,16 @@ export function FeatureGrid() {
           {FEATURES.map((feature) => (
             <li
               key={feature.title}
-              className="rounded-xl border border-border-subtle bg-surface-raised p-6"
+              className="border-border-subtle bg-surface-raised rounded-xl border p-6"
             >
               <span
                 aria-hidden="true"
-                className="inline-flex size-9 items-center justify-center rounded-lg bg-accent-subtle text-accent"
+                className="bg-accent-subtle text-accent inline-flex size-9 items-center justify-center rounded-lg"
               >
                 <feature.icon className="size-4.5" />
               </span>
-              <h3 className="mt-4 text-md font-medium text-text-primary">{feature.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+              <h3 className="text-md text-text-primary mt-4 font-medium">{feature.title}</h3>
+              <p className="text-text-secondary mt-2 text-sm leading-relaxed">
                 {feature.description}
               </p>
             </li>

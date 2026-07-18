@@ -1,6 +1,6 @@
-import { buttonVariants, cn } from '@videodip/ui';
 import { Star } from 'lucide-react';
 import { GITHUB_URL } from '../landing.content';
+import { LinkButton } from './link-button';
 
 /**
  * Sticky site header with the wordmark and the single call to action.
@@ -16,16 +16,13 @@ export function SiteHeader() {
         aria-label="Main"
         className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6"
       >
-        <a
-          href="/"
-          className="font-display text-md font-semibold tracking-tight text-text-primary"
-        >
+        <a href="/" className="font-display text-md text-text-primary font-semibold tracking-tight">
           VideoDip
         </a>
-        <a className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))} href={GITHUB_URL}>
+        <LinkButton variant="outline" size="sm" href={GITHUB_URL}>
           <Star aria-hidden="true" className="size-3.5" />
           Star on GitHub
-        </a>
+        </LinkButton>
       </nav>
     </header>
   );

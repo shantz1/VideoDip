@@ -184,16 +184,18 @@ export function buildExportArgs(
     const x = `(W-w)/2+${clip.transform.positionX}*W`;
     const y = `(H-h)/2+${clip.transform.positionY}*H`;
     const video =
-      `color=c=black:s=${width}x${height}:r=${fps}:d=${seconds(renderDuration)}[base${i}];` +
+      `color=c=black:s=${width}x${height}:r=${fps}:d=${seconds(renderDuration)},` +
+      `settb=AVTB,setpts=N/(${fps}*TB)[base${i}];` +
       `[${i}:v]trim=start=${start}:end=${end},setpts=PTS-STARTPTS,` +
       `${videoExtension ? videoExtension.slice(1) + ',' : ''}` +
       `scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
       `scale=w='max(2,trunc(iw*${clip.transform.scaleX}/2)*2)':` +
       `h='max(2,trunc(ih*${clip.transform.scaleY}/2)*2)',` +
       `rotate=${angle}:ow=rotw(iw):oh=roth(ih):c=none,format=rgba,` +
-      `colorchannelmixer=aa=${clip.opacity}[fg${i}];` +
+      `colorchannelmixer=aa=${clip.opacity},fps=${fps},` +
+      `settb=AVTB,setpts=N/(${fps}*TB)[fg${i}];` +
       `[base${i}][fg${i}]overlay=x='${x}':y='${y}':shortest=1,setsar=1,` +
-      `fps=${fps},settb=1/${fps},setpts=PTS-STARTPTS[v${i}]`;
+      `fps=${fps},settb=AVTB,setpts=N/(${fps}*TB)[v${i}]`;
     const volume = clip.audio.isMuted ? 0 : clip.audio.volume;
     const fadeIn = clip.audio.fadeIn > 0 ? `,afade=t=in:st=0:d=${seconds(clip.audio.fadeIn)}` : '';
     const fadeOut =

@@ -9,6 +9,7 @@ import type {
 } from '@videodip/media-engine';
 import type {
   AppError,
+  AppUpdatePort,
   AssetId,
   MediaLocator,
   ProjectArchivePort,
@@ -57,6 +58,10 @@ export interface AiHostCapability {
   readonly transcriptionModels: TranscriptionModelManager;
 }
 
+export interface UpdateHostCapability {
+  readonly appUpdates: AppUpdatePort;
+}
+
 /** Host capabilities consumed by the reusable editor UI. */
 export interface EditorHost
   extends
@@ -64,7 +69,8 @@ export interface EditorHost
     ExportHostCapability,
     WindowHostCapability,
     ProjectHostCapability,
-    AiHostCapability {}
+    AiHostCapability,
+    UpdateHostCapability {}
 
 const EditorHostContext = createContext<EditorHost | null>(null);
 

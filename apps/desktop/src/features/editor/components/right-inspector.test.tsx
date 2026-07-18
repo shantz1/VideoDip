@@ -30,9 +30,9 @@ describe('transition inspector', () => {
       start: ms(1000),
       duration: ms(1000),
     });
-    const [from, to] = useProjectStore
-      .getState()
-      .document.tracks.find((track) => track.kind === 'video')?.clips ?? [];
+    const [from, to] =
+      useProjectStore.getState().document.tracks.find((track) => track.kind === 'video')?.clips ??
+      [];
     if (!from || !to) throw new Error('Expected adjacent clips.');
     const added = useProjectStore.getState().addTransition({
       fromClipId: from.id,

@@ -1,6 +1,6 @@
-import { buttonVariants, cn } from '@videodip/ui';
 import { ArrowRight, Star } from 'lucide-react';
 import { BUILD_FROM_SOURCE_URL, GITHUB_URL } from '../landing.content';
+import { LinkButton } from './link-button';
 
 /**
  * Closing call to action.
@@ -13,32 +13,29 @@ import { BUILD_FROM_SOURCE_URL, GITHUB_URL } from '../landing.content';
 export function CtaSection() {
   return (
     <section aria-labelledby="cta-heading" className="px-6 py-20">
-      <div className="mx-auto max-w-3xl rounded-2xl border border-border-subtle bg-surface-raised px-6 py-12 text-center sm:px-12">
+      <div className="border-border-subtle bg-surface-raised mx-auto max-w-3xl rounded-2xl border px-6 py-12 text-center sm:px-12">
         <h2
           id="cta-heading"
-          className="font-display text-2xl font-semibold tracking-tight text-text-primary sm:text-3xl"
+          className="font-display text-text-primary text-2xl font-semibold tracking-tight sm:text-3xl"
         >
           Watch it come together
         </h2>
-        <p className="mt-4 text-md leading-relaxed text-text-secondary">
+        <p className="text-md text-text-secondary mt-4 leading-relaxed">
           VideoDip is built in the open under AGPL-3.0. Star the repository to follow releases, or
           clone it and build the editor from source today.
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <a className={cn(buttonVariants({ variant: 'primary', size: 'lg' }))} href={GITHUB_URL}>
+          <LinkButton variant="primary" size="lg" href={GITHUB_URL}>
             <Star aria-hidden="true" className="size-4" />
             Star on GitHub
-          </a>
-          <a
-            className={cn(buttonVariants({ variant: 'outline', size: 'lg' }))}
-            href={BUILD_FROM_SOURCE_URL}
-          >
+          </LinkButton>
+          <LinkButton variant="outline" size="lg" href={BUILD_FROM_SOURCE_URL}>
             Build from source
             <ArrowRight aria-hidden="true" className="size-4" />
-          </a>
+          </LinkButton>
         </div>
         <p className="mt-6">
-          <span className="inline-flex items-center rounded-full border border-dashed border-border-default px-3 py-1 text-xs text-text-tertiary">
+          <span className="border-border-default text-text-tertiary inline-flex items-center rounded-full border border-dashed px-3 py-1 text-xs">
             Download coming soon
           </span>
         </p>

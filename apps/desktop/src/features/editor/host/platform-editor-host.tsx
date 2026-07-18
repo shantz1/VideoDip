@@ -20,6 +20,7 @@ import {
   createTauriProjectRepository,
 } from '../lib/project-repository';
 import { toggleFullscreen } from '../lib/toggle-fullscreen';
+import { createBrowserAppUpdatePort, createTauriAppUpdatePort } from '../lib/app-update';
 import {
   createBrowserWhisperIntegration,
   createWhisperIntegration,
@@ -48,6 +49,7 @@ function createPlatformHost(): EditorHost {
     },
     transcription: whisper.provider,
     transcriptionModels: whisper.models,
+    appUpdates: desktop ? createTauriAppUpdatePort() : createBrowserAppUpdatePort(),
   };
 }
 

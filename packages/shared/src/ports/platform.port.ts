@@ -83,6 +83,36 @@ export interface ProjectArchivePort<TProject> {
   importArchive(signal?: AbortSignal): Promise<Result<TProject | null>>;
 }
 
+/** Version and release notes for one downloadable application update. */
+export interface AppUpdateInfo {
+  readonly version: string;
+  readonly notes?: string;
+}
+
+/**
+ * Application self-update supplied by the active host.
+ *
+ * Offline tolerance is part of this contract, not an implementation detail:
+ * an unreachable, missing, or malformed update feed resolves `Ok<null>` —
+ * never an error — because the editor must stay fully usable with no network.
+ * Errors are reserved for a discovered update that could not be downloaded,
+ * verified, or staged, which the user can act on by retrying.
+ */
+export interface AppUpdatePort {
+  /** Resolves the newest applicable update, or `null` when up to date or offline. */
+  check(signal?: AbortSignal): Promise<Result<AppUpdateInfo | null>>;
+  /**
+   * Downloads and stages the update found by the last successful `check`.
+   * Progress is normalized 0..1 and only reported while the total size is known.
+   */
+  downloadAndInstall(
+    onProgress?: (fraction: Normalized) => void,
+    signal?: AbortSignal,
+  ): Promise<Result<void>>;
+  /** Restarts the application so the staged update applies. */
+  restart(): Promise<Result<void>>;
+}
+
 /** Host-neutral progress for a long-running video export. */
 export interface VideoExportProgress {
   readonly jobId: JobId;

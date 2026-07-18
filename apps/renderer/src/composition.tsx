@@ -391,7 +391,9 @@ function transitionAudioFactor(clip: CompositionClip, frame: number): number {
 }
 
 function isDirectionalTransition(kind: string): boolean {
-  return kind === 'slide-left' || kind === 'slide-right' || kind === 'wipe-left' || kind === 'wipe-right';
+  return (
+    kind === 'slide-left' || kind === 'slide-right' || kind === 'wipe-left' || kind === 'wipe-right'
+  );
 }
 
 function clamp01(value: number): number {

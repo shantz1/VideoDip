@@ -144,7 +144,7 @@ describe('buildExportArgs', () => {
     expect(graph).toContain('scale=1080:1920');
     expect(graph).toContain('color=c=black:s=1080x1920');
     expect(graph).toContain('fps=30');
-    expect(graph).toContain('settb=1/30,setpts=PTS-STARTPTS');
+    expect(graph).toContain('settb=AVTB,setpts=N/(30*TB)');
   });
 
   it('compiles static transform, opacity, volume and fades into the graph', () => {

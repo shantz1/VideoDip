@@ -376,6 +376,9 @@ fn transcribe(
             "-sow".into(),
             "-np".into(),
             "-pp".into(),
+            // Non-speech tokens (music, noise) are the usual trigger for
+            // whisper's repeated-character hallucination loops.
+            "--suppress-nst".into(),
         ];
         if let Some(prompt) = request.prompt.filter(|value| !value.trim().is_empty()) {
             args.extend(["--prompt".into(), prompt]);
@@ -392,8 +395,7 @@ fn transcribe(
         emit(app, task_id, "Reading timestamps", 0.98);
         let bytes = fs::read(output_base.with_extension("json"))
             .map_err(|error| format!("Whisper output is missing: {error}"))?;
-        let value = serde_json::from_slice(&bytes)
-            .map_err(|error| format!("Whisper output is invalid: {error}"))?;
+        let value = parse_whisper_output(&bytes)?;
         emit(app, task_id, "Complete", 1.0);
         Ok(value)
     })();
@@ -498,6 +500,16 @@ fn read_progress_stream(mut reader: impl Read, mut on_progress: impl FnMut(f64))
     }
 }
 
+// whisper.cpp's BPE tokenizer splits multibyte scripts (Devanagari, CJK, …)
+// mid-character, so token-level "text" fields in the full-JSON output can hold
+// invalid UTF-8 fragments. Strict parsing would reject the entire otherwise
+// valid transcription; lossy conversion turns only those fragments into U+FFFD,
+// which the frontend detects and repairs from the intact segment text.
+fn parse_whisper_output(bytes: &[u8]) -> Result<Value, String> {
+    serde_json::from_str(&String::from_utf8_lossy(bytes))
+        .map_err(|error| format!("Whisper output is invalid: {error}"))
+}
+
 fn parse_progress_percent(line: &str) -> Option<f64> {
     let before_percent = line.split('%').next()?;
     let digits = before_percent
@@ -598,5 +610,25 @@ mod tests {
         let mut observed = Vec::new();
         read_progress_stream(&source[..], |percent| observed.push(percent));
         assert_eq!(observed, vec![0.12, 0.42, 1.0]);
+    }
+
+    #[test]
+    fn accepts_split_multibyte_token_bytes_in_whisper_json() {
+        // "नमस्ते" tokenized by BPE splits the first character's three UTF-8
+        // bytes across two tokens: [E0, A4] and [A8, ...]. Neither token text
+        // is valid UTF-8 on its own.
+        let mut broken = Vec::new();
+        broken.extend_from_slice(b"{\"tokens\":[{\"text\":\"");
+        broken.extend_from_slice(&[0xE0, 0xA4]);
+        broken.extend_from_slice(b"\"},{\"text\":\"");
+        broken.extend_from_slice(&[0xA8]);
+        broken.extend_from_slice(b"\"}],\"text\":\"\xE0\xA4\xA8\"}");
+
+        assert!(serde_json::from_slice::<Value>(&broken).is_err());
+
+        let value = parse_whisper_output(&broken).expect("lossy parse succeeds");
+        assert_eq!(value["text"], "न");
+        let fragment = value["tokens"][0]["text"].as_str().expect("token text");
+        assert!(fragment.contains('\u{FFFD}'));
     }
 }
