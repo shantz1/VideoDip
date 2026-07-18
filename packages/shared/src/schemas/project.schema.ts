@@ -15,6 +15,9 @@ import {
 /** Current on-disk project snapshot version. Increment only with a migration. */
 export const PROJECT_SNAPSHOT_VERSION = 1 as const;
 
+/** Current timeline aggregate schema stored inside a project snapshot. */
+export const TIMELINE_SCHEMA_VERSION = 2 as const;
+
 /** Project canvas ratios supported by the current editor and export path. */
 export const projectAspectRatioSchema = z.enum(['9:16', '3:4', '4:5', '1:1', '16:9']);
 
@@ -422,6 +425,7 @@ export const projectSnapshotSchema = z
     name: z.string().trim().min(1).max(160),
     aspectRatio: projectAspectRatioSchema,
     timeline: z.strictObject({
+      schemaVersion: z.literal(TIMELINE_SCHEMA_VERSION).default(TIMELINE_SCHEMA_VERSION),
       tracks: z.array(projectTrackSchema),
       transitions: z.array(projectTransitionSchema).default([]),
     }),

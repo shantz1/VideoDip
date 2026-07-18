@@ -49,6 +49,20 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
 
 ## Done (this session, 2026-07-17)
 
+- **Timeline Engine v2 Phase 1 foundation (2026-07-18)** — versioned the
+  timeline aggregate with backward-compatible snapshot migration, centralized
+  typed document validation, replaced ambient entity ID generation with
+  injectable random/deterministic providers, added non-persisted identity
+  indexes, and routed project-store undo/redo through labeled atomic timeline
+  transactions. Phase 2 editing-session work remains intentionally untouched.
+
+- **Playhead/preview feedback isolation (2026-07-18)** — stopped unchanged
+  timeline seeks from publishing a new Zustand state and decoupled Remotion's
+  Player render cycle from per-frame playhead updates through an imperative
+  store subscription. This breaks the `seek → frameupdate → render` recursion
+  that reached React's maximum update depth while dragging the playhead. Covered
+  by store-notification and Player-render regression tests plus browser QA.
+
 - **Subtitle System v2 foundation and professional styling (2026-07-18)** —
   kept `SubtitleDocument` separate from timeline media clips while making it
   mandatory in autosave, centralized missing-field inheritance into one domain

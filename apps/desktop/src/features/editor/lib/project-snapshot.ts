@@ -9,7 +9,7 @@ import {
   type Result,
 } from '@videodip/shared';
 import type { MediaItem } from '@videodip/media-engine';
-import type { TimelineDocument } from '@videodip/timeline';
+import { validateTimeline, type TimelineDocument } from '@videodip/timeline';
 import type { SubtitleDocument } from '@videodip/subtitle-engine';
 import type { AspectRatio } from '../editor.store';
 
@@ -26,6 +26,8 @@ export interface ProjectSnapshotSource {
 
 /** Builds and validates the only project shape allowed to cross a storage boundary. */
 export function buildProjectSnapshot(source: ProjectSnapshotSource): Result<ProjectSnapshot> {
+  const timelineValidation = validateTimeline(source.timeline);
+  if (!timelineValidation.ok) return err(timelineValidation.error);
   const parsed = projectSnapshotSchema.safeParse({
     version: PROJECT_SNAPSHOT_VERSION,
     ...source,

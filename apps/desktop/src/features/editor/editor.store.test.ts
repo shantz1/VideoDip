@@ -37,6 +37,19 @@ describe('playhead', () => {
     expect(state().playhead).toBe(0);
   });
 
+  it('does not publish when seeking to the current playhead', () => {
+    state().seek(ms(1000));
+    let notifications = 0;
+    const unsubscribe = useEditorStore.subscribe(() => {
+      notifications += 1;
+    });
+
+    state().seek(ms(1000));
+
+    unsubscribe();
+    expect(notifications).toBe(0);
+  });
+
   it('nudges relative to the current position', () => {
     state().seek(ms(1000));
     state().nudge(ms(250));

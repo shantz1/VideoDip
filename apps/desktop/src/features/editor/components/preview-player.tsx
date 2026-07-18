@@ -1,7 +1,7 @@
 'use client';
 
 import { Player, type PlayerRef } from '@remotion/player';
-import { framesToMs, msToFrames, type AssetId } from '@videodip/shared';
+import { framesToMs, msToFrames, type AssetId, type Milliseconds } from '@videodip/shared';
 import { getDuration } from '@videodip/timeline';
 import { VideoDipComposition } from '@videodip/renderer';
 import { useEffect, useMemo, useRef } from 'react';
@@ -52,7 +52,6 @@ export function PreviewPlayer() {
   const mediaItems = useEditorStore((s) => s.mediaItems);
   const aspectRatio = useEditorStore((s) => s.aspectRatio);
   const isPlaying = useEditorStore((s) => s.isPlaying);
-  const playhead = useEditorStore((s) => s.playhead);
   const seek = useEditorStore((s) => s.seek);
   const pause = useEditorStore((s) => s.pause);
 
@@ -91,16 +90,26 @@ export function PreviewPlayer() {
     else player.pause();
   }, [isPlaying]);
 
-  // store.playhead → player position, with a one-frame tolerance to break
-  // the loop with the frameupdate listener below.
+  // Store playhead → player position. Subscribe imperatively so Remotion's
+  // own `frameupdate` event can update the editor transport without rerendering
+  // the Player from inside its event dispatch. Rerendering the Player on every
+  // emitted frame creates a synchronous React/Remotion feedback loop while the
+  // timeline playhead is dragged.
   useEffect(() => {
-    const player = playerRef.current;
-    if (!player) return;
-    const targetFrame = msToFrames(playhead, PROJECT_FPS);
-    if (Math.abs(player.getCurrentFrame() - targetFrame) > 1) {
-      player.seekTo(targetFrame);
-    }
-  }, [playhead]);
+    const syncPlayhead = (playhead: Milliseconds) => {
+      const player = playerRef.current;
+      if (!player) return;
+      const targetFrame = msToFrames(playhead, PROJECT_FPS);
+      if (Math.abs(player.getCurrentFrame() - targetFrame) > 1) {
+        player.seekTo(targetFrame);
+      }
+    };
+
+    syncPlayhead(useEditorStore.getState().playhead);
+    return useEditorStore.subscribe((state, previous) => {
+      if (state.playhead !== previous.playhead) syncPlayhead(state.playhead);
+    });
+  }, []);
 
   // player position → store.playhead; player end → store.pause.
   useEffect(() => {

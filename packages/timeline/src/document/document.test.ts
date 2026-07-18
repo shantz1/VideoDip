@@ -20,6 +20,7 @@ import {
   updateClipProperties,
   updateClipAudio,
   updateTransition,
+  validateTimeline,
 } from './document.service.js';
 import type { TrackId } from '@videodip/shared';
 
@@ -98,6 +99,49 @@ describe('generic tracks', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('CONFLICT');
+  });
+});
+
+describe('validateTimeline', () => {
+  it('accepts a document produced by domain operations', () => {
+    const document = unwrap(
+      addClip(createEmptyTimeline(), {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+      }),
+    );
+
+    expect(validateTimeline(document)).toEqual({ ok: true, value: document });
+  });
+
+  it('rejects duplicate clip IDs across tracks', () => {
+    const document = unwrap(
+      addClip(createEmptyTimeline(), {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+      }),
+    );
+    const clip = document.tracks.find((track) => track.id === VIDEO)?.clips[0];
+    if (!clip) throw new Error('Expected a clip.');
+    const malformed = {
+      ...document,
+      tracks: document.tracks.map((track) =>
+        track.id === AUDIO ? { ...track, clips: [{ ...clip, trackId: AUDIO }] } : track,
+      ),
+    };
+
+    const result = validateTimeline(malformed);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('VALIDATION');
+  });
+
+  it('rejects a timeline from an unsupported schema version', () => {
+    const result = validateTimeline({ ...createEmptyTimeline(), schemaVersion: 1 as 2 });
+    expect(result.ok).toBe(false);
   });
 });
 

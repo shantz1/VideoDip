@@ -3,6 +3,7 @@ import {
   err,
   normalized,
   ok,
+  TIMELINE_SCHEMA_VERSION,
   type AssetId,
   type ClipId,
   type Milliseconds,
@@ -25,6 +26,8 @@ import type {
   TrackKind,
   TransitionKind,
 } from './document.types.js';
+import { createRandomTimelineIdProvider } from '../identity/identity.service.js';
+import type { TimelineIdProvider } from '../identity/identity.types.js';
 
 /** Identity transform assigned to newly placed clips. */
 export const DEFAULT_CLIP_TRANSFORM: ClipTransform = {
@@ -65,7 +68,131 @@ export function createTimeline(
   tracks: readonly Track[] = [],
   transitions: readonly ClipTransition[] = [],
 ): TimelineDocument {
-  return { tracks: [...tracks], transitions: [...transitions] };
+  return {
+    schemaVersion: TIMELINE_SCHEMA_VERSION,
+    tracks: [...tracks],
+    transitions: [...transitions],
+  };
+}
+
+/**
+ * Validates document-wide invariants that individual edit operations cannot prove alone.
+ *
+ * Persistence still validates unknown JSON at its boundary. This domain validation is the
+ * single preflight for typed documents entering transactions, indexes, and project saves.
+ */
+export function validateTimeline(document: TimelineDocument): Result<TimelineDocument> {
+  if (document.schemaVersion !== TIMELINE_SCHEMA_VERSION) {
+    return err(
+      appError(
+        'VALIDATION',
+        `Timeline schema version ${document.schemaVersion} is not supported.`,
+        `Migrate the timeline to schema version ${TIMELINE_SCHEMA_VERSION}.`,
+      ),
+    );
+  }
+
+  const trackIds = new Set<string>();
+  const clipIds = new Set<string>();
+  for (const track of document.tracks) {
+    if (
+      trackIds.has(track.id) ||
+      !String(track.id).trim() ||
+      !track.kind.trim() ||
+      !track.label.trim()
+    ) {
+      return err(
+        appError(
+          'VALIDATION',
+          'Timeline tracks must have unique IDs, kinds, and labels.',
+          'Rename or remove the invalid track before continuing.',
+        ),
+      );
+    }
+    trackIds.add(track.id);
+
+    for (const clip of track.clips) {
+      if (
+        clipIds.has(clip.id) ||
+        !String(clip.id).trim() ||
+        !String(clip.assetId).trim() ||
+        clip.trackId !== track.id
+      ) {
+        return err(
+          appError(
+            'VALIDATION',
+            'Timeline clips must have unique IDs and belong to their containing track.',
+            'Repair the clip identity or track reference before continuing.',
+          ),
+        );
+      }
+      clipIds.add(clip.id);
+      if (
+        !Number.isFinite(clip.start) ||
+        clip.start < 0 ||
+        !Number.isFinite(clip.duration) ||
+        clip.duration <= 0 ||
+        !Number.isFinite(clip.sourceStart) ||
+        clip.sourceStart < 0
+      ) {
+        return err(
+          appError(
+            'VALIDATION',
+            'Timeline clips must be ordered, non-overlapping, and have valid source ranges.',
+            'Move or trim the conflicting clip before continuing.',
+          ),
+        );
+      }
+      const clipError = validateClipProperties(clip);
+      if (clipError) return err(clipError);
+    }
+    const orderedClips = [...track.clips].sort((left, right) => left.start - right.start);
+    for (const [clipIndex, clip] of orderedClips.entries()) {
+      const previous = orderedClips[clipIndex - 1];
+      if (previous && previous.start + previous.duration > clip.start) {
+        return err(
+          appError(
+            'VALIDATION',
+            'Timeline clips must be non-overlapping and have valid source ranges.',
+            'Move or trim the conflicting clip before continuing.',
+          ),
+        );
+      }
+    }
+  }
+
+  const transitionIds = new Set<string>();
+  for (const transition of document.transitions) {
+    if (
+      transitionIds.has(transition.id) ||
+      !String(transition.id).trim() ||
+      !trackIds.has(transition.trackId)
+    ) {
+      return err(
+        appError(
+          'VALIDATION',
+          'Timeline transitions must have unique IDs and reference an existing track.',
+          'Repair or remove the invalid transition before continuing.',
+        ),
+      );
+    }
+    transitionIds.add(transition.id);
+    const transitionValidation = validateTransition(document, transition, transition.id);
+    if (!transitionValidation.ok) return transitionValidation;
+    const endpoints = findTransitionEndpoints(document, transition.fromClipId, transition.toClipId);
+    if (!endpoints.ok) return endpoints;
+    if (endpoints.value.track.id !== transition.trackId) {
+      return err(
+        appError(
+          'VALIDATION',
+          'A transition track must match the track containing both endpoint clips.',
+          'Repair the transition track reference before continuing.',
+        ),
+      );
+    }
+  }
+
+  return ok(document);
 }
 
 /** Input for creating a track without exposing a mutable clip array. */
@@ -76,9 +203,12 @@ export interface CreateTrackInput {
 }
 
 /** Creates one empty generic track. Kind is metadata, not a closed enum. */
-export function createTrack(input: CreateTrackInput): Track {
+export function createTrack(
+  input: CreateTrackInput,
+  idProvider: TimelineIdProvider = createRandomTimelineIdProvider(),
+): Track {
   return {
-    id: input.id ?? (crypto.randomUUID() as TrackId),
+    id: input.id ?? idProvider.nextTrackId(),
     kind: input.kind,
     label: input.label,
     clips: [],
@@ -90,8 +220,9 @@ export function addTrack(
   document: TimelineDocument,
   input: CreateTrackInput,
   index: number = document.tracks.length,
+  idProvider: TimelineIdProvider = createRandomTimelineIdProvider(),
 ): Result<TimelineDocument> {
-  const track = createTrack(input);
+  const track = createTrack(input, idProvider);
   if (document.tracks.some((existing) => existing.id === track.id)) {
     return err(
       appError(
@@ -245,11 +376,12 @@ export interface UpdateTransitionInput {
 export function addTransition(
   document: TimelineDocument,
   input: AddTransitionInput,
+  idProvider: TimelineIdProvider = createRandomTimelineIdProvider(),
 ): Result<TimelineDocument> {
   const endpoints = findTransitionEndpoints(document, input.fromClipId, input.toClipId);
   if (!endpoints.ok) return endpoints;
   const transition: ClipTransition = {
-    id: input.id ?? (crypto.randomUUID() as TransitionId),
+    id: input.id ?? idProvider.nextTransitionId(),
     trackId: endpoints.value.track.id,
     fromClipId: input.fromClipId,
     toClipId: input.toClipId,
@@ -458,7 +590,11 @@ export interface UpdateClipPropertiesInput {
  * clips — an editor that moves a creator's other clips as a side effect of an
  * unrelated action is a worse failure mode than an explicit rejection.
  */
-export function addClip(document: TimelineDocument, input: AddClipInput): Result<TimelineDocument> {
+export function addClip(
+  document: TimelineDocument,
+  input: AddClipInput,
+  idProvider: TimelineIdProvider = createRandomTimelineIdProvider(),
+): Result<TimelineDocument> {
   const sourceStart = input.sourceStart ?? (0 as Milliseconds);
   if (
     !Number.isFinite(input.start) ||
@@ -495,7 +631,7 @@ export function addClip(document: TimelineDocument, input: AddClipInput): Result
   }
 
   const clip: Clip = {
-    id: crypto.randomUUID() as ClipId,
+    id: idProvider.nextClipId(),
     trackId: input.trackId,
     assetId: input.assetId,
     start: input.start,
@@ -1005,6 +1141,7 @@ export function splitClip(
   document: TimelineDocument,
   clipId: ClipId,
   atTime: Milliseconds,
+  idProvider: TimelineIdProvider = createRandomTimelineIdProvider(),
 ): Result<TimelineDocument> {
   if (!Number.isFinite(atTime) || atTime < 0) {
     return err(
@@ -1051,7 +1188,7 @@ export function splitClip(
   };
   const right: Clip = {
     ...clip,
-    id: crypto.randomUUID() as ClipId,
+    id: idProvider.nextClipId(),
     start: atTime,
     duration: (clipEnd - atTime) as Milliseconds,
     sourceStart: (clip.sourceStart + (atTime - clip.start)) as Milliseconds,

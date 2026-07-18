@@ -209,6 +209,7 @@ describe('undo / redo', () => {
   it('undoes and reapplies document edits', () => {
     state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
     expect(state().past).toHaveLength(1);
+    expect(state().past[0]?.label).toBe('Add clip');
 
     state().undo();
     expect(videoClips()).toHaveLength(0);

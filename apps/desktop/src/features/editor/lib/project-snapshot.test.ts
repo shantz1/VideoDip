@@ -20,7 +20,12 @@ describe('buildProjectSnapshot', () => {
     const result = buildProjectSnapshot(source);
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).toMatchObject({ version: 1, id: source.id });
+    if (result.ok)
+      expect(result.value).toMatchObject({
+        version: 1,
+        id: source.id,
+        timeline: { schemaVersion: 2 },
+      });
   });
 
   it('returns a recoverable validation error for invalid state', () => {

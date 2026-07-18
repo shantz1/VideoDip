@@ -1,17 +1,28 @@
 'use client';
 
-import type { ClipId, Milliseconds, Result, TrackId, TransitionId } from '@videodip/shared';
+import {
+  ok,
+  type ClipId,
+  type Milliseconds,
+  type Result,
+  type TrackId,
+  type TransitionId,
+} from '@videodip/shared';
 import {
   addClip as addClipOp,
   addTransition as addTransitionOp,
   addTrack as addTrackOp,
+  commitTimelineTransaction,
   createTimeline,
+  createTimelineHistory,
+  createTimelineTransaction,
   createTrack,
   getDuration,
   moveClip as moveClipOp,
   removeClip as removeClipOp,
   removeTrack as removeTrackOp,
   removeTransition as removeTransitionOp,
+  redoTimelineHistory,
   reorderTrack as reorderTrackOp,
   setClipAnimation as setClipAnimationOp,
   splitClip as splitClipOp,
@@ -19,12 +30,15 @@ import {
   updateClipProperties as updateClipPropertiesOp,
   updateClipAudio as updateClipAudioOp,
   updateTransition as updateTransitionOp,
+  undoTimelineHistory,
   type AddClipInput,
   type AddTransitionInput,
   type CreateTrackInput,
   type ClipKeyframe,
   type ClipAudioSettings,
   type TimelineDocument,
+  type TimelineHistory,
+  type TimelineTransaction,
   type TrimEdge,
   type UpdateClipPropertiesInput,
   type UpdateTransitionInput,
@@ -44,8 +58,8 @@ import { useSubtitleStore } from './subtitle.store';
  */
 export interface ProjectState {
   readonly document: TimelineDocument;
-  readonly past: readonly TimelineDocument[];
-  readonly future: readonly TimelineDocument[];
+  readonly past: readonly TimelineTransaction[];
+  readonly future: readonly TimelineTransaction[];
   readonly addClip: (input: AddClipInput) => Result<TimelineDocument>;
   readonly addTransition: (input: AddTransitionInput) => Result<TimelineDocument>;
   readonly addTrack: (input: CreateTrackInput, index?: number) => Result<TimelineDocument>;
@@ -97,120 +111,112 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   addClip: (input) => {
     const result = addClipOp(get().document, input);
-    if (result.ok) applyDocument(result.value);
+    if (result.ok) applyDocument(result.value, 'Add clip');
     return result;
   },
 
   addTransition: (input) => {
     const result = addTransitionOp(get().document, input);
-    if (result.ok) applyDocument(result.value);
+    if (result.ok) applyDocument(result.value, 'Add transition');
     return result;
   },
 
   addTrack: (input, index) => {
     const result = addTrackOp(get().document, input, index);
-    if (result.ok) applyDocument(result.value);
+    if (result.ok) applyDocument(result.value, 'Add track');
     return result;
   },
 
   removeTrack: (trackId) => {
     const result = removeTrackOp(get().document, trackId);
-    if (result.ok) applyDocument(result.value);
+    if (result.ok) applyDocument(result.value, 'Remove track');
     return result;
   },
 
   reorderTrack: (trackId, index) => {
     const result = reorderTrackOp(get().document, trackId, index);
-    if (result.ok) applyDocument(result.value);
+    if (result.ok) applyDocument(result.value, 'Reorder track');
     return result;
   },
 
   removeClip: (clipId) => {
     const before = get().document;
     const next = removeClipOp(before, clipId);
-    if (next !== before) applyDocument(next);
+    if (next !== before) applyDocument(next, 'Remove clip');
   },
 
   removeTransition: (transitionId) => {
     const before = get().document;
     const next = removeTransitionOp(before, transitionId);
-    if (next !== before) applyDocument(next);
+    if (next !== before) applyDocument(next, 'Remove transition');
   },
 
   moveClip: (clipId, newStart, newTrackId) => {
     const result = moveClipOp(get().document, clipId, newStart, newTrackId);
-    if (result.ok) applyDocument(result.value);
+    if (result.ok) applyDocument(result.value, 'Move clip');
     return result;
   },
 
   trimClip: (clipId, edge, newTime) => {
     const result = trimClipOp(get().document, clipId, edge, newTime);
-    if (result.ok) applyDocument(result.value);
+    if (result.ok) applyDocument(result.value, 'Trim clip');
     return result;
   },
 
   splitClip: (clipId, atTime) => {
     const result = splitClipOp(get().document, clipId, atTime);
-    if (result.ok) applyDocument(result.value);
+    if (result.ok) applyDocument(result.value, 'Split clip');
     return result;
   },
 
   updateClipProperties: (clipId, patch) => {
     const result = updateClipPropertiesOp(get().document, clipId, patch);
-    if (result.ok) applyDocument(result.value);
+    if (result.ok) applyDocument(result.value, 'Update clip properties');
     return result;
   },
 
   setClipAnimation: (clipId, animation) => {
     const result = setClipAnimationOp(get().document, clipId, animation);
-    if (result.ok) applyDocument(result.value);
+    if (result.ok) applyDocument(result.value, 'Set clip animation');
     return result;
   },
 
   updateClipAudio: (clipId, patch) => {
     const result = updateClipAudioOp(get().document, clipId, patch);
-    if (result.ok) applyDocument(result.value);
+    if (result.ok) applyDocument(result.value, 'Update clip audio');
     return result;
   },
 
   updateTransition: (transitionId, patch) => {
     const result = updateTransitionOp(get().document, transitionId, patch);
-    if (result.ok) applyDocument(result.value);
+    if (result.ok) applyDocument(result.value, 'Update transition');
     return result;
   },
 
   undo: () => {
     const state = get();
-    const previous = state.past.at(-1);
-    if (!previous) return;
-    set({
-      document: previous,
-      past: state.past.slice(0, -1),
-      future: [state.document, ...state.future],
-    });
-    syncEditor(previous);
+    const history = undoTimelineHistory(state);
+    if (history === state) return;
+    set(history);
+    syncEditor(history.document);
   },
 
   redo: () => {
     const state = get();
-    const [next, ...remaining] = state.future;
-    if (!next) return;
-    set({
-      document: next,
-      past: [...state.past, state.document],
-      future: remaining,
-    });
-    syncEditor(next);
+    const history = redoTimelineHistory(state);
+    if (history === state) return;
+    set(history);
+    syncEditor(history.document);
   },
 
   reset: () => {
     const document = createEditorTimeline();
-    set({ document, past: [], future: [] });
+    set(requireTimelineHistory(document));
     syncEditor(document);
   },
 
   load: (document) => {
-    set({ document, past: [], future: [] });
+    set(requireTimelineHistory(document));
     syncEditor(document, false);
   },
 }));
@@ -224,18 +230,27 @@ function createEditorTimeline(): TimelineDocument {
   ]);
 }
 
-function applyDocument(document: TimelineDocument): void {
+function applyDocument(document: TimelineDocument, label: string): void {
   const state = useProjectStore.getState();
-  setProjectState({
-    document,
-    past: [...state.past, state.document],
-    future: [],
+  const transaction = createTimelineTransaction(state.document, {
+    label,
+    operations: [() => ok(document)],
   });
+  if (!transaction.ok) return;
+  const committed = commitTimelineTransaction(state, transaction.value);
+  if (!committed.ok || committed.value === state) return;
+  setProjectState(committed.value);
   syncEditor(document);
 }
 
-function setProjectState(state: Pick<ProjectState, 'document' | 'past' | 'future'>): void {
+function setProjectState(state: TimelineHistory): void {
   useProjectStore.setState(state);
+}
+
+function requireTimelineHistory(document: TimelineDocument): TimelineHistory {
+  const history = createTimelineHistory(document);
+  if (!history.ok) throw new Error(history.error.message);
+  return history.value;
 }
 
 function syncEditor(document: TimelineDocument, dirty = true): void {

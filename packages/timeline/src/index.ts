@@ -5,3 +5,6 @@
  */
 
 export * from './document/index.js';
+export * from './identity/index.js';
+export * from './runtime-index/index.js';
+export * from './history/index.js';

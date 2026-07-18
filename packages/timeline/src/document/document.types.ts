@@ -6,6 +6,7 @@ import type {
   TrackId,
   TransitionId,
 } from '@videodip/shared';
+import type { TIMELINE_SCHEMA_VERSION } from '@videodip/shared';
 
 /**
  * Open track classification metadata.
@@ -125,6 +126,8 @@ export interface Track {
  * reverse that order when compositing from the visual background upward.
  */
 export interface TimelineDocument {
+  /** Version of the persisted timeline aggregate, independent of project snapshots. */
+  readonly schemaVersion: typeof TIMELINE_SCHEMA_VERSION;
   readonly tracks: readonly Track[];
   readonly transitions: readonly ClipTransition[];
 }

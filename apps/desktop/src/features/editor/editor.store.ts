@@ -244,7 +244,15 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   pause: () => set({ isPlaying: false }),
   togglePlayback: () => set((state) => ({ isPlaying: !state.isPlaying })),
 
-  seek: (time) => set((state) => ({ playhead: ms(clamp(time, 0, state.duration)) })),
+  seek: (time) =>
+    set((state) => {
+      const playhead = ms(clamp(time, 0, state.duration));
+      // Remotion emits `frameupdate` after an imperative seek. Publishing an
+      // unchanged playhead here makes the Player render again, which can emit
+      // another frame update and recursively feed the same value back into
+      // this store while the timeline playhead is being dragged.
+      return state.playhead === playhead ? state : { playhead };
+    }),
 
   nudge: (delta) => {
     const { playhead, duration } = get();

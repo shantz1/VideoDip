@@ -47,6 +47,7 @@ describe('projectSnapshotSchema', () => {
 
   it('adds backward-compatible visual defaults to older v1 clips', () => {
     const result = projectSnapshotSchema.parse(SNAPSHOT);
+    expect(result.timeline.schemaVersion).toBe(2);
     expect(result.timeline.tracks[0]?.clips[0]).toMatchObject({
       transform: { positionX: 0, positionY: 0, scaleX: 1, scaleY: 1, rotation: 0 },
       opacity: 1,

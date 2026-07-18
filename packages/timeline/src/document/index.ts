@@ -38,6 +38,7 @@ export {
   updateClipAudio,
   updateClipProperties,
   updateTransition,
+  validateTimeline,
   type AddClipInput,
   type AddTransitionInput,
   type CreateTrackInput,
