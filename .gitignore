@@ -196,6 +196,15 @@ docs/
 *.pdf
 !docs/**/*.pdf
 
+# --- Repo constitution & agent tracking (local only) --------------------------
+# CLAUDE.md is the project constitution for humans and coding agents; AGENTS.md
+# points to it; TRACKER.md is the day-to-day progress log. All three stay in
+# the working tree for local development but are not published — README.md
+# documents that they exist and where to find them.
+/CLAUDE.md
+/AGENTS.md
+/TRACKER.md
+
 # --- OS / editor noise -------------------------------------------------------
 .DS_Store
 Thumbs.db

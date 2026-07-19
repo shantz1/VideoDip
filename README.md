@@ -24,8 +24,9 @@ among many.
 
 **Active development.** The reusable desktop/browser editor core, timeline,
 preview, project persistence, local Whisper subtitles, templates, and native
-export pipeline are implemented. See [`TRACKER.md`](./TRACKER.md) for verified
-progress and [`docs/PLAN.md`](./docs/PLAN.md) for the current queue.
+export pipeline are implemented. Day-to-day verified progress is tracked in a
+local `TRACKER.md` (kept in the working tree, not published on GitHub); the
+current short-horizon queue is in [`docs/PLAN.md`](./docs/PLAN.md).
 
 ## Requirements
 
@@ -121,8 +122,10 @@ Domain packages never import from apps, and never import React.
 
 ## Contributing
 
-Read [`CLAUDE.md`](./CLAUDE.md) first — it is the project constitution and
-applies to humans and coding agents alike.
+This repository keeps its project constitution and agent instructions
+(`CLAUDE.md`, `AGENTS.md`) as local, gitignored files rather than publishing
+them on GitHub. Clone the repo and read `CLAUDE.md` at the root before
+contributing — it applies to humans and coding agents alike.
 
 ## License
 
