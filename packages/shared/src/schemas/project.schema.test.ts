@@ -57,8 +57,31 @@ describe('projectSnapshotSchema', () => {
       animation: [],
       audio: { volume: 1, isMuted: false, fadeIn: 0, fadeOut: 0 },
     });
+    expect(result.timeline.tracks[0]).toMatchObject({
+      isVisible: true,
+      isMuted: false,
+      isLocked: false,
+    });
     expect(result.subtitles).toMatchObject({ version: 1, language: null, segments: [] });
     expect(result.timeline.transitions).toEqual([]);
+  });
+
+  it('round-trips persisted track visibility, mute, and lock state', () => {
+    const track = {
+      ...SNAPSHOT.timeline.tracks[0],
+      isVisible: false,
+      isMuted: true,
+      isLocked: true,
+    };
+    const result = projectSnapshotSchema.parse({
+      ...SNAPSHOT,
+      timeline: { tracks: [track] },
+    });
+    expect(result.timeline.tracks[0]).toMatchObject({
+      isVisible: false,
+      isMuted: true,
+      isLocked: true,
+    });
   });
 
   it('persists valid adjacent-clip transitions and rejects dangling cuts', () => {

@@ -19,6 +19,7 @@ export {
   DEFAULT_CLIP_TRANSFORM,
   DEFAULT_CLIP_AUDIO,
   DEFAULT_CLIP_VISUALS,
+  DEFAULT_TRACK_STATE,
   addClip,
   addTransition,
   addTrack,
@@ -35,6 +36,7 @@ export {
   splitClip,
   setClipAnimation,
   trimClip,
+  updateTrackState,
   updateClipAudio,
   updateClipProperties,
   updateTransition,
@@ -45,4 +47,5 @@ export {
   type TrimEdge,
   type UpdateClipPropertiesInput,
   type UpdateTransitionInput,
+  type UpdateTrackStateInput,
 } from './document.service.js';

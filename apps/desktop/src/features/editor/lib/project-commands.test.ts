@@ -1,4 +1,7 @@
 import {
+  appError,
+  err,
+  ms,
   ok,
   projectSnapshotSchema,
   type ProjectArchivePort,
@@ -8,6 +11,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEditorStore } from '../editor.store';
 import { useProjectStore } from '../project.store';
+import { useSubtitleStore } from '../subtitle.store';
 import {
   deleteSavedProject,
   exportCurrentProjectArchive,
@@ -20,6 +24,7 @@ import {
 
 const initialEditor = useEditorStore.getState();
 const initialProject = useProjectStore.getState();
+const initialSubtitle = useSubtitleStore.getState();
 const snapshot = projectSnapshotSchema.parse({
   version: 1,
   id: 'saved-project',
@@ -59,6 +64,7 @@ function archives(
 beforeEach(() => {
   useEditorStore.setState(initialEditor, true);
   useProjectStore.setState(initialProject, true);
+  useSubtitleStore.setState(initialSubtitle, true);
 });
 
 describe('project commands', () => {
@@ -108,14 +114,76 @@ describe('project commands', () => {
     });
   });
 
-  it('refuses to delete the active project', async () => {
-    useEditorStore.setState({ projectId: snapshot.id });
+  it('deletes the active project and resets every document store to a fresh project', async () => {
+    useEditorStore.getState().restoreProject({
+      id: snapshot.id,
+      name: snapshot.name,
+      aspectRatio: snapshot.aspectRatio,
+      mediaItems: [],
+      createdAt: snapshot.createdAt,
+    });
+    useProjectStore.getState().addTrack({
+      kind: 'video',
+      label: 'Video',
+    });
+    const subtitle = useSubtitleStore.getState().add({
+      id: 'cue-before-delete' as never,
+      start: ms(0),
+      end: ms(1000),
+      text: 'Delete me',
+    });
+    expect(subtitle.ok).toBe(true);
     const remove = vi.fn(async () => ok(undefined));
     const result = await deleteSavedProject(repository({ delete: remove }), snapshot.id);
 
+    expect(result.ok).toBe(true);
+    expect(remove).toHaveBeenCalledWith(snapshot.id);
+    expect(useEditorStore.getState()).toMatchObject({
+      projectName: 'Untitled project',
+      isDirty: true,
+      mediaItems: [],
+    });
+    expect(useEditorStore.getState().projectId).not.toBe(snapshot.id);
+    expect(useProjectStore.getState().document.tracks).toHaveLength(3);
+    expect(
+      useProjectStore.getState().document.tracks.every((track) => track.clips.length === 0),
+    ).toBe(true);
+    expect(useSubtitleStore.getState().document.segments).toEqual([]);
+  });
+
+  it('keeps the active project untouched when storage deletion fails', async () => {
+    useEditorStore.getState().restoreProject({
+      id: snapshot.id,
+      name: snapshot.name,
+      aspectRatio: snapshot.aspectRatio,
+      mediaItems: [],
+      createdAt: snapshot.createdAt,
+    });
+    const result = await deleteSavedProject(
+      repository({
+        delete: vi.fn(async () =>
+          err(appError('IO', 'Delete failed.', 'Retry deleting the project.')),
+        ),
+      }),
+      snapshot.id,
+    );
+
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('CONFLICT');
-    expect(remove).not.toHaveBeenCalled();
+    expect(useEditorStore.getState()).toMatchObject({
+      projectId: snapshot.id,
+      projectName: snapshot.name,
+      isDirty: false,
+    });
+  });
+
+  it('deletes an inactive project without replacing the active project', async () => {
+    const activeId = 'active-project' as ProjectId;
+    useEditorStore.setState({ projectId: activeId });
+    const remove = vi.fn(async () => ok(undefined));
+
+    expect((await deleteSavedProject(repository({ delete: remove }), snapshot.id)).ok).toBe(true);
+    expect(remove).toHaveBeenCalledWith(snapshot.id);
+    expect(useEditorStore.getState().projectId).toBe(activeId);
   });
 
   it('renames an inactive project through load and validated save', async () => {

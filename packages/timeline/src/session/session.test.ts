@@ -14,6 +14,9 @@ import {
   SESSION_ZOOM_MAX,
   SESSION_ZOOM_MIN,
   SESSION_ZOOM_STEP,
+  SESSION_TRACK_HEIGHT_DEFAULT,
+  SESSION_TRACK_HEIGHT_MAX,
+  SESSION_TRACK_HEIGHT_MIN,
   clearSessionSelection,
   clearSessionClipTransformPreview,
   createEditingSession,
@@ -23,15 +26,19 @@ import {
   getSelectedTransitionId,
   getSessionClipTransformPreview,
   getSessionSelectedClipIds,
+  getSessionSelectedSubtitleSegmentIds,
+  getSessionTrackView,
   isSessionRefSelected,
   previewSessionClipTransform,
   reconcileSession,
   selectSessionItem,
   setSessionTool,
+  setSessionTrackRowHeight,
   setSessionZoom,
   stepSessionZoom,
   toggleSessionSelection,
   toggleSessionSnapping,
+  toggleSessionTrackCollapsed,
 } from './session.service.js';
 
 const VIDEO = 'video' as TrackId;
@@ -65,6 +72,7 @@ describe('createEditingSession', () => {
     expect(session.selection).toEqual({ refs: [], primary: null, anchor: null });
     expect(session.viewport).toEqual({ zoom: SESSION_ZOOM_DEFAULT, isSnappingEnabled: true });
     expect(session.activeTool).toBe('select');
+    expect(session.trackViews).toEqual({});
   });
 
   it('applies overrides, merging a partial viewport with defaults', () => {
@@ -80,6 +88,31 @@ describe('createEditingSession', () => {
   it('falls back to the default zoom for a non-finite override', () => {
     const session = createEditingSession({ viewport: { zoom: Number.NaN } });
     expect(session.viewport.zoom).toBe(SESSION_ZOOM_DEFAULT);
+  });
+});
+
+describe('track view state', () => {
+  it('supplies defaults and stores collapse without changing document state', () => {
+    const session = createEditingSession();
+    expect(getSessionTrackView(session, VIDEO)).toEqual({
+      isCollapsed: false,
+      rowHeight: SESSION_TRACK_HEIGHT_DEFAULT,
+    });
+    const collapsed = toggleSessionTrackCollapsed(session, VIDEO);
+    expect(getSessionTrackView(collapsed, VIDEO)).toEqual({
+      isCollapsed: true,
+      rowHeight: SESSION_TRACK_HEIGHT_DEFAULT,
+    });
+    expect(session.trackViews).toEqual({});
+  });
+
+  it('clamps row height and ignores non-finite input', () => {
+    const session = createEditingSession();
+    expect(setSessionTrackRowHeight(session, VIDEO, Number.NaN)).toBe(session);
+    const short = setSessionTrackRowHeight(session, VIDEO, 0);
+    expect(getSessionTrackView(short, VIDEO).rowHeight).toBe(SESSION_TRACK_HEIGHT_MIN);
+    const tall = setSessionTrackRowHeight(short, VIDEO, 10_000);
+    expect(getSessionTrackView(tall, VIDEO).rowHeight).toBe(SESSION_TRACK_HEIGHT_MAX);
   });
 });
 
@@ -152,6 +185,17 @@ describe('toggleSessionSelection', () => {
     expect(session.selection.refs).toEqual([clipA, clipB, clipC]);
     expect(session.selection.primary).toEqual(clipC);
     expect(getSessionSelectedClipIds(session)).toEqual(['clip-a', 'clip-b', 'clip-c']);
+  });
+
+  it('returns every selected subtitle segment in selection order', () => {
+    const cueA = { type: 'subtitle-segment', id: 'cue-a' as SegmentId } as const;
+    const cueB = { type: 'subtitle-segment', id: 'cue-b' as SegmentId } as const;
+    const session = toggleSessionSelection(
+      toggleSessionSelection(createEditingSession(), cueA),
+      cueB,
+    );
+
+    expect(getSessionSelectedSubtitleSegmentIds(session)).toEqual([cueA.id, cueB.id]);
   });
 
   it('removes a present ref, primary falls back to the new last member', () => {
@@ -301,6 +345,13 @@ describe('reconcileSession', () => {
     const index = createTimelineRuntimeIndex(document);
     if (!index.ok) throw new Error(index.error.message);
     expect(reconcileSession(session, index.value)).toBe(session);
+  });
+
+  it('drops ephemeral row state for tracks that no longer exist', () => {
+    const withTrackView = toggleSessionTrackCollapsed(createEditingSession(), VIDEO);
+    const index = createTimelineRuntimeIndex(createTimeline());
+    if (!index.ok) throw new Error(index.error.message);
+    expect(reconcileSession(withTrackView, index.value).trackViews).toEqual({});
   });
 
   it('keeps a selection referencing a live clip', () => {

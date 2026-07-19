@@ -7,6 +7,7 @@ import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } fro
 import { useEditorStore } from '../editor.store';
 import { COMPOSITION_SIZE } from '../lib/composition-size';
 import { moveSubtitlePosition } from '../lib/subtitle-preview-position';
+import { useProjectStore } from '../project.store';
 import { useSessionStore } from '../session.store';
 import { useSubtitleStore } from '../subtitle.store';
 
@@ -33,6 +34,9 @@ export function SubtitlePreviewOverlay() {
   const playhead = useEditorStore((state) => state.playhead);
   const isSnapEnabled = useSessionStore((state) => state.session.viewport.isSnappingEnabled);
   const aspectRatio = useEditorStore((state) => state.aspectRatio);
+  const subtitleTrack = useProjectStore((state) =>
+    state.document.tracks.find((track) => track.kind === 'subtitle'),
+  );
   const [guides, setGuides] = useState<{ vertical: number | null; horizontal: number | null }>({
     vertical: null,
     horizontal: null,
@@ -49,7 +53,7 @@ export function SubtitlePreviewOverlay() {
     [cue, document.defaultStyle, stylePreviews],
   );
 
-  if (!cue || !style) return null;
+  if (!cue || !style || subtitleTrack?.isVisible === false) return null;
   const isSelected = cue.id === selectedId;
   const compositionWidth = COMPOSITION_SIZE[aspectRatio].width;
 
@@ -57,6 +61,7 @@ export function SubtitlePreviewOverlay() {
     event.preventDefault();
     selectSubtitle(cue.id);
     setInspectorTab('subtitle');
+    if (subtitleTrack?.isLocked === true) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
       pointerId: event.pointerId,
@@ -121,6 +126,7 @@ export function SubtitlePreviewOverlay() {
       <div
         role="button"
         aria-label={`Move subtitle: ${cue.text}`}
+        aria-disabled={subtitleTrack?.isLocked === true}
         tabIndex={isSelected ? 0 : -1}
         onPointerDown={startDrag}
         onPointerMove={moveDrag}
@@ -130,6 +136,7 @@ export function SubtitlePreviewOverlay() {
           'pointer-events-auto absolute cursor-move border border-transparent text-transparent select-none',
           'hover:border-accent/70 focus-visible:border-accent focus-visible:outline-none',
           isSelected && 'border-accent',
+          subtitleTrack?.isLocked === true && 'cursor-default',
         )}
         style={{
           left: `${style.positionX * 100}%`,

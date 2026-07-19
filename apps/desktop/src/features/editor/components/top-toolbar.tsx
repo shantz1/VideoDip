@@ -130,8 +130,8 @@ export function TopToolbar() {
       ],
     },
     {
-      label: 'Templates',
-      items: [{ label: 'Browse templates', action: () => setActivePanel('templates') }],
+      label: 'Text styles',
+      items: [{ label: 'Browse text styles', action: () => setActivePanel('templates') }],
     },
     {
       label: 'Plugins',

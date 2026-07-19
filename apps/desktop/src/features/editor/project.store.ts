@@ -9,28 +9,14 @@ import {
   type TransitionId,
 } from '@videodip/shared';
 import {
-  addClip as addClipOp,
-  addTransition as addTransitionOp,
-  addTrack as addTrackOp,
   commitTimelineTransaction,
   createTimeline,
   createTimelineHistory,
   createTimelineRuntimeIndex,
-  createTimelineTransaction,
   createTrack,
   getDuration,
-  moveClip as moveClipOp,
-  removeClip as removeClipOp,
-  removeTrack as removeTrackOp,
-  removeTransition as removeTransitionOp,
+  planTimelineEdit,
   redoTimelineHistory,
-  reorderTrack as reorderTrackOp,
-  setClipAnimation as setClipAnimationOp,
-  splitClip as splitClipOp,
-  trimClip as trimClipOp,
-  updateClipProperties as updateClipPropertiesOp,
-  updateClipAudio as updateClipAudioOp,
-  updateTransition as updateTransitionOp,
   undoTimelineHistory,
   type AddClipInput,
   type AddTransitionInput,
@@ -38,12 +24,13 @@ import {
   type ClipKeyframe,
   type ClipAudioSettings,
   type TimelineDocument,
+  type TimelineEditIntent,
   type TimelineHistory,
-  type TimelineOperation,
   type TimelineTransaction,
   type TrimEdge,
   type UpdateClipPropertiesInput,
   type UpdateTransitionInput,
+  type UpdateTrackStateInput,
 } from '@videodip/timeline';
 import { create } from 'zustand';
 import { useEditorStore } from './editor.store';
@@ -68,6 +55,10 @@ export interface ProjectState {
   readonly addTrack: (input: CreateTrackInput, index?: number) => Result<TimelineDocument>;
   readonly removeTrack: (trackId: TrackId) => Result<TimelineDocument>;
   readonly reorderTrack: (trackId: TrackId, index: number) => Result<TimelineDocument>;
+  readonly updateTrackState: (
+    trackId: TrackId,
+    patch: UpdateTrackStateInput,
+  ) => Result<TimelineDocument>;
   readonly removeClip: (clipId: ClipId) => void;
   /** Removes every listed clip in a single transaction — one undo entry for the whole set. */
   readonly removeClips: (clipIds: readonly ClipId[]) => void;
@@ -114,67 +105,61 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   past: [],
   future: [],
 
-  addClip: (input) => applyTimelineOperation('Add clip', (document) => addClipOp(document, input)),
+  addClip: (input) => applyTimelineIntent({ type: 'clip.add', input }),
 
-  addTransition: (input) =>
-    applyTimelineOperation('Add transition', (document) => addTransitionOp(document, input)),
+  addTransition: (input) => applyTimelineIntent({ type: 'transition.add', input }),
 
   addTrack: (input, index) =>
-    applyTimelineOperation('Add track', (document) => addTrackOp(document, input, index)),
+    applyTimelineIntent({
+      type: 'track.add',
+      input,
+      ...(index === undefined ? {} : { index }),
+    }),
 
-  removeTrack: (trackId) =>
-    applyTimelineOperation('Remove track', (document) => removeTrackOp(document, trackId)),
+  removeTrack: (trackId) => applyTimelineIntent({ type: 'track.remove', trackId }),
 
-  reorderTrack: (trackId, index) =>
-    applyTimelineOperation('Reorder track', (document) => reorderTrackOp(document, trackId, index)),
+  reorderTrack: (trackId, index) => applyTimelineIntent({ type: 'track.reorder', trackId, index }),
+
+  updateTrackState: (trackId, patch) =>
+    applyTimelineIntent({ type: 'track.state.update', trackId, patch }),
 
   removeClip: (clipId) => {
-    applyTimelineOperation('Remove clip', (document) => ok(removeClipOp(document, clipId)));
+    applyTimelineIntent({ type: 'clip.remove', clipIds: [clipId] });
   },
 
   removeClips: (clipIds) => {
     if (clipIds.length === 0) return;
-    applyTimelineOperation('Remove clips', (document) =>
-      ok(clipIds.reduce((current, clipId) => removeClipOp(current, clipId), document)),
-    );
+    applyTimelineIntent({ type: 'clip.remove', clipIds });
   },
 
   removeTransition: (transitionId) => {
-    applyTimelineOperation('Remove transition', (document) =>
-      ok(removeTransitionOp(document, transitionId)),
-    );
+    applyTimelineIntent({ type: 'transition.remove', transitionId });
   },
 
   moveClip: (clipId, newStart, newTrackId) =>
-    applyTimelineOperation('Move clip', (document) =>
-      moveClipOp(document, clipId, newStart, newTrackId),
-    ),
+    applyTimelineIntent({
+      type: 'clip.move',
+      clipId,
+      start: newStart,
+      ...(newTrackId === undefined ? {} : { trackId: newTrackId }),
+    }),
 
   trimClip: (clipId, edge, newTime) =>
-    applyTimelineOperation('Trim clip', (document) => trimClipOp(document, clipId, edge, newTime)),
+    applyTimelineIntent({ type: 'clip.trim', clipId, edge, time: newTime }),
 
-  splitClip: (clipId, atTime) =>
-    applyTimelineOperation('Split clip', (document) => splitClipOp(document, clipId, atTime)),
+  splitClip: (clipId, atTime) => applyTimelineIntent({ type: 'clip.split', clipId, time: atTime }),
 
   updateClipProperties: (clipId, patch) =>
-    applyTimelineOperation('Update clip properties', (document) =>
-      updateClipPropertiesOp(document, clipId, patch),
-    ),
+    applyTimelineIntent({ type: 'clip.properties.update', clipId, patch }),
 
   setClipAnimation: (clipId, animation) =>
-    applyTimelineOperation('Set clip animation', (document) =>
-      setClipAnimationOp(document, clipId, animation),
-    ),
+    applyTimelineIntent({ type: 'clip.animation.set', clipId, animation }),
 
   updateClipAudio: (clipId, patch) =>
-    applyTimelineOperation('Update clip audio', (document) =>
-      updateClipAudioOp(document, clipId, patch),
-    ),
+    applyTimelineIntent({ type: 'clip.audio.update', clipId, patch }),
 
   updateTransition: (transitionId, patch) =>
-    applyTimelineOperation('Update transition', (document) =>
-      updateTransitionOp(document, transitionId, patch),
-    ),
+    applyTimelineIntent({ type: 'transition.update', transitionId, patch }),
 
   undo: () => {
     const state = get();
@@ -215,15 +200,9 @@ function createEditorTimeline(): TimelineDocument {
   ]);
 }
 
-function applyTimelineOperation(
-  label: string,
-  operation: TimelineOperation,
-): Result<TimelineDocument> {
+function applyTimelineIntent(intent: TimelineEditIntent): Result<TimelineDocument> {
   const state = useProjectStore.getState();
-  const transaction = createTimelineTransaction(state.document, {
-    label,
-    operations: [operation],
-  });
+  const transaction = planTimelineEdit(state.document, intent);
   if (!transaction.ok) return transaction;
   const committed = commitTimelineTransaction(state, transaction.value);
   if (!committed.ok) return committed;

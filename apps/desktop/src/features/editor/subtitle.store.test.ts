@@ -92,4 +92,58 @@ describe('subtitle store', () => {
       id: 'cue-a',
     });
   });
+
+  it('applies a style to several selected cues as one undoable edit', () => {
+    for (const [index, id] of ['cue-a', 'cue-b', 'cue-c'].entries()) {
+      const added = useSubtitleStore.getState().add({
+        id: id as SegmentId,
+        start: ms(index * 2000),
+        end: ms(index * 2000 + 1000),
+        text: id,
+      });
+      if (!added.ok) throw new Error(added.error.message);
+    }
+    useSessionStore.getState().select({ type: 'subtitle-segment', id: 'cue-a' as SegmentId });
+    useSessionStore.getState().toggleSelect({ type: 'subtitle-segment', id: 'cue-b' as SegmentId });
+    const historyBefore = useSubtitleStore.getState().past.length;
+
+    const result = useSubtitleStore
+      .getState()
+      .applyStyleToSegments(['cue-a' as SegmentId, 'cue-b' as SegmentId], {
+        fontFamily: 'Anton',
+        foreground: '#ffde59',
+      });
+
+    expect(result.ok).toBe(true);
+    expect(useSubtitleStore.getState().past).toHaveLength(historyBefore + 1);
+    expect(useSubtitleStore.getState().document.segments.map((segment) => segment.style)).toEqual([
+      expect.objectContaining({ fontFamily: 'Anton', foreground: '#ffde59' }),
+      expect.objectContaining({ fontFamily: 'Anton', foreground: '#ffde59' }),
+      {},
+    ]);
+
+    useSubtitleStore.getState().undo();
+    expect(useSubtitleStore.getState().document.segments[0]?.style.fontFamily).toBeUndefined();
+    expect(useSessionStore.getState().session.selection.refs).toHaveLength(2);
+  });
+
+  it('removes several subtitle cues in one undoable edit', () => {
+    for (const [index, id] of ['cue-a', 'cue-b', 'cue-c'].entries()) {
+      const added = useSubtitleStore.getState().add({
+        id: id as SegmentId,
+        start: ms(index * 2000),
+        end: ms(index * 2000 + 1000),
+        text: id,
+      });
+      if (!added.ok) throw new Error(added.error.message);
+    }
+    const historyBefore = useSubtitleStore.getState().past.length;
+
+    useSubtitleStore.getState().removeMany(['cue-a' as SegmentId, 'cue-b' as SegmentId]);
+
+    expect(useSubtitleStore.getState().document.segments.map((segment) => segment.id)).toEqual([
+      'cue-c',
+    ]);
+    expect(useSubtitleStore.getState().past).toHaveLength(historyBefore + 1);
+  });
 });

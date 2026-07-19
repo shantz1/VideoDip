@@ -9,3 +9,4 @@ export * from './identity/index.js';
 export * from './runtime-index/index.js';
 export * from './history/index.js';
 export * from './session/index.js';
+export * from './planner/index.js';

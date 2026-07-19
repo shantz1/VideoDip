@@ -22,6 +22,8 @@
     "@tauri-apps/plugin-process": "catalog:",
     "@tauri-apps/plugin-updater": "catalog:",
     "@videodip/media-engine": "workspace:*",
+    "@videodip/plugin-runtime": "workspace:*",
+    "@videodip/plugin-sdk": "workspace:*",
     "@videodip/renderer": "workspace:*",
     "@videodip/shared": "workspace:*",
     "@videodip/subtitle-engine": "workspace:*",

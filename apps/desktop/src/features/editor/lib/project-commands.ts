@@ -91,21 +91,26 @@ export async function openSavedProject(
   return ok(undefined);
 }
 
-/** Deletes an inactive project; the active snapshot must be switched first. */
+/**
+ * Deletes a saved project.
+ *
+ * Deleting the active snapshot is intentionally non-destructive until the
+ * repository confirms the delete. Only then do all three in-memory project
+ * stores move to a fresh blank project, preventing autosave from recreating
+ * the deleted identity and preventing a failed delete from discarding work.
+ */
 export async function deleteSavedProject(
   projects: ProjectStore,
   id: ProjectId,
 ): Promise<Result<void>> {
-  if (useEditorStore.getState().projectId === id) {
-    return err(
-      appError(
-        'CONFLICT',
-        'The open project cannot be deleted.',
-        'Open or create another project, then delete this one.',
-      ),
-    );
-  }
-  return projects.delete(id);
+  const wasActive = useEditorStore.getState().projectId === id;
+  const deleted = await projects.delete(id);
+  if (!deleted.ok || !wasActive) return deleted;
+
+  useEditorStore.getState().newProject();
+  useProjectStore.getState().reset();
+  useSubtitleStore.getState().reset();
+  return deleted;
 }
 
 /** Renames active or inactive snapshots through the same validated repository. */

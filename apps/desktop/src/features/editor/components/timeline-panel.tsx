@@ -1,23 +1,50 @@
 'use client';
 
-import { ms, type Milliseconds } from '@videodip/shared';
+import { ms, type Milliseconds, type Result, type SegmentId, type TrackId } from '@videodip/shared';
+import type { SubtitleSegment } from '@videodip/subtitle-engine';
 import {
   getDuration,
+  getSessionTrackView,
   getSelectedClipId,
   getSelectedSubtitleSegmentId,
   getSelectedTransitionId,
+  SESSION_TRACK_HEIGHT_COLLAPSED,
+  SESSION_TRACK_HEIGHT_DEFAULT,
+  SESSION_TRACK_HEIGHT_MAX,
+  SESSION_TRACK_HEIGHT_MIN,
   type Clip,
   type ClipTransition,
+  type Track,
   type TimelineSelectionRef,
+  type TimelineDocument,
   type TrimEdge,
+  type UpdateTrackStateInput,
 } from '@videodip/timeline';
 import { Button, cn } from '@videodip/ui';
-import { Magnet, Maximize2, Plus, Scissors, Sparkles, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Lock,
+  Magnet,
+  Maximize2,
+  Plus,
+  Scissors,
+  Sparkles,
+  Trash2,
+  Unlock,
+  Volume2,
+  VolumeX,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
 import { useEditorStore } from '../editor.store';
 import {
   calculateAnchoredScrollLeft,
   calculateFitZoom,
+  getContentDuration,
   MIN_VIEW_DURATION,
   trackColorClass,
 } from '../lib/timeline-presentation';
@@ -27,8 +54,20 @@ import { useProjectStore } from '../project.store';
 import { useSessionStore } from '../session.store';
 import { useSubtitleStore } from '../subtitle.store';
 
-const TRACK_HEIGHT = 44;
-const HEADER_WIDTH = 112;
+const HEADER_WIDTH = 176;
+
+interface TimelineContextMenuItem {
+  readonly label: string;
+  readonly onSelect: () => void;
+  readonly disabled?: boolean;
+  readonly danger?: boolean;
+}
+
+interface TimelineContextMenuState {
+  readonly x: number;
+  readonly y: number;
+  readonly items: readonly TimelineContextMenuItem[];
+}
 
 /**
  * The timeline.
@@ -83,6 +122,10 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
     () => selectionRefs.filter((ref) => ref.type === 'clip').map((ref) => ref.id),
     [selectionRefs],
   );
+  const selectedSubtitleIds = useMemo(
+    () => selectionRefs.filter((ref) => ref.type === 'subtitle-segment').map((ref) => ref.id),
+    [selectionRefs],
+  );
   const selectedTransitionId = useSessionStore((s) => getSelectedTransitionId(s.session));
   const clearSelection = useSessionStore((s) => s.clearSelection);
   const playhead = useEditorStore((s) => s.playhead);
@@ -93,23 +136,40 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
   const splitClip = useProjectStore((s) => s.splitClip);
   const selectedSubtitleId = useSessionStore((s) => getSelectedSubtitleSegmentId(s.session));
   const subtitleDocument = useSubtitleStore((state) => state.document);
-  const selectSubtitle = useSubtitleStore((state) => state.select);
   const removeSubtitle = useSubtitleStore((state) => state.remove);
+  const removeSubtitles = useSubtitleStore((state) => state.removeMany);
   const splitSubtitle = useSubtitleStore((state) => state.split);
 
   const fitTimeline = () => {
     if (viewportWidth <= 0) return;
-    setZoom(calculateFitZoom(viewportWidth, getDuration(document)));
+    const contentDuration = getContentDuration(
+      getDuration(document),
+      subtitleDocument.segments.at(-1)?.end,
+    );
+    setZoom(calculateFitZoom(viewportWidth, contentDuration));
   };
 
   const selectedClip = selectedClipId
     ? document.tracks.flatMap((t) => t.clips).find((c) => c.id === selectedClipId)
     : undefined;
+  const hasLockedSelection = document.tracks.some((track) => {
+    if (!track.isLocked) return false;
+    if (
+      track.clips.some((clip) => selectedClipIds.includes(clip.id)) ||
+      document.transitions.some(
+        (transition) => transition.id === selectedTransitionId && transition.trackId === track.id,
+      )
+    ) {
+      return true;
+    }
+    return track.kind === 'subtitle' && selectedSubtitleIds.length > 0;
+  });
 
   // The playhead must sit strictly inside the clip — splitting at an edge
   // would produce one empty half, which `splitClip` itself rejects.
   const canSplit =
     selectedClip !== undefined &&
+    !hasLockedSelection &&
     playhead > selectedClip.start &&
     playhead < selectedClip.start + selectedClip.duration;
   const selectedSubtitle = selectedSubtitleId
@@ -117,10 +177,12 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
     : undefined;
   const canSplitSubtitle =
     selectedSubtitle !== undefined &&
+    !hasLockedSelection &&
     playhead > selectedSubtitle.start &&
     playhead < selectedSubtitle.end;
 
   const handleDelete = () => {
+    if (hasLockedSelection) return;
     if (selectedClipIds.length > 1) {
       removeClips(selectedClipIds);
       clearSelection();
@@ -130,9 +192,12 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
     } else if (selectedTransitionId) {
       removeTransition(selectedTransitionId);
       clearSelection();
+    } else if (selectedSubtitleIds.length > 1) {
+      removeSubtitles(selectedSubtitleIds);
+      clearSelection();
     } else if (selectedSubtitleId) {
       removeSubtitle(selectedSubtitleId);
-      selectSubtitle(null);
+      clearSelection();
     }
   };
 
@@ -160,9 +225,13 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
         aria-label={
           selectedClipIds.length > 1
             ? `Delete ${selectedClipIds.length} selected clips`
-            : 'Delete selected timeline item'
+            : selectedSubtitleIds.length > 1
+              ? `Delete ${selectedSubtitleIds.length} selected subtitles`
+              : 'Delete selected timeline item'
         }
-        disabled={!selectedClipId && !selectedTransitionId && !selectedSubtitleId}
+        disabled={
+          hasLockedSelection || (!selectedClipId && !selectedTransitionId && !selectedSubtitleId)
+        }
         onClick={handleDelete}
         leadingIcon={<Trash2 />}
       />
@@ -216,30 +285,142 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
 
 function TrackHeaders() {
   const tracks = useProjectStore((state) => state.document.tracks);
+  const updateTrackState = useProjectStore((state) => state.updateTrackState);
+  const session = useSessionStore((state) => state.session);
+  const toggleTrackCollapsed = useSessionStore((state) => state.toggleTrackCollapsed);
+  const setTrackRowHeight = useSessionStore((state) => state.setTrackRowHeight);
 
   return (
     <div className="border-border-subtle shrink-0 border-r" style={{ width: HEADER_WIDTH }}>
       {/* Spacer aligning headers with the ruler. */}
       <div className="border-border-subtle h-6 border-b" />
-      {tracks.map((track) => (
-        <div
-          key={track.id}
-          className="border-border-subtle flex items-center gap-2 border-b px-2"
-          style={{ height: TRACK_HEIGHT }}
-        >
-          <span
-            className={cn('h-4 w-0.5 rounded-full', trackColorClass(track.kind))}
-            aria-hidden="true"
+      {tracks.map((track) => {
+        const view = getSessionTrackView(session, track.id);
+        return (
+          <TrackHeaderRow
+            key={track.id}
+            track={track}
+            isCollapsed={view.isCollapsed}
+            rowHeight={view.rowHeight}
+            onToggleCollapsed={() => toggleTrackCollapsed(track.id)}
+            onResize={(height) => setTrackRowHeight(track.id, height)}
+            onUpdate={(patch) => updateTrackState(track.id, patch)}
           />
-          <span className="text-text-secondary truncate text-xs">{track.label}</span>
-        </div>
-      ))}
+        );
+      })}
+    </div>
+  );
+}
+
+function TrackHeaderRow({
+  track,
+  isCollapsed,
+  rowHeight,
+  onToggleCollapsed,
+  onResize,
+  onUpdate,
+}: {
+  readonly track: Track;
+  readonly isCollapsed: boolean;
+  readonly rowHeight: number;
+  readonly onToggleCollapsed: () => void;
+  readonly onResize: (height: number) => void;
+  readonly onUpdate: (patch: UpdateTrackStateInput) => Result<TimelineDocument>;
+}) {
+  const resizeStart = useRef<{ readonly y: number; readonly height: number } | null>(null);
+  const height = isCollapsed ? SESSION_TRACK_HEIGHT_COLLAPSED : rowHeight;
+  const iconButton =
+    'text-text-tertiary hover:bg-surface-hover hover:text-text-primary flex size-6 shrink-0 items-center justify-center rounded-sm focus-visible:outline-2 focus-visible:outline-(--color-border-focus)';
+
+  return (
+    <div
+      className="border-border-subtle relative flex items-center gap-1 border-b px-1"
+      style={{ height }}
+      data-track-header={track.id}
+    >
+      <button
+        type="button"
+        className={iconButton}
+        aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${track.label} track`}
+        aria-expanded={!isCollapsed}
+        onClick={onToggleCollapsed}
+      >
+        {isCollapsed ? <ChevronRight className="size-3" /> : <ChevronDown className="size-3" />}
+      </button>
+      <span
+        className={cn('h-4 w-0.5 shrink-0 rounded-full', trackColorClass(track.kind))}
+        aria-hidden="true"
+      />
+      <span className="text-text-secondary min-w-0 flex-1 truncate text-xs">{track.label}</span>
+      <button
+        type="button"
+        className={cn(iconButton, !track.isVisible && 'bg-surface-selected text-accent')}
+        aria-label={`${track.isVisible ? 'Hide' : 'Show'} ${track.label} track`}
+        aria-pressed={!track.isVisible}
+        onClick={() => onUpdate({ isVisible: !track.isVisible })}
+      >
+        {track.isVisible ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
+      </button>
+      <button
+        type="button"
+        className={cn(iconButton, track.isMuted && 'bg-surface-selected text-accent')}
+        aria-label={`${track.isMuted ? 'Unmute' : 'Mute'} ${track.label} track`}
+        aria-pressed={track.isMuted}
+        onClick={() => onUpdate({ isMuted: !track.isMuted })}
+      >
+        {track.isMuted ? <VolumeX className="size-3" /> : <Volume2 className="size-3" />}
+      </button>
+      <button
+        type="button"
+        className={cn(iconButton, track.isLocked && 'bg-surface-selected text-accent')}
+        aria-label={`${track.isLocked ? 'Unlock' : 'Lock'} ${track.label} track`}
+        aria-pressed={track.isLocked}
+        onClick={() => onUpdate({ isLocked: !track.isLocked })}
+      >
+        {track.isLocked ? <Lock className="size-3" /> : <Unlock className="size-3" />}
+      </button>
+      {!isCollapsed && (
+        <div
+          role="separator"
+          aria-label={`Resize ${track.label} track`}
+          aria-orientation="horizontal"
+          aria-valuemin={SESSION_TRACK_HEIGHT_MIN}
+          aria-valuemax={SESSION_TRACK_HEIGHT_MAX}
+          aria-valuenow={rowHeight}
+          tabIndex={0}
+          className="bg-border-subtle hover:bg-accent focus-visible:bg-accent absolute inset-x-0 bottom-0 h-px cursor-row-resize touch-none focus-visible:outline-none"
+          onPointerDown={(event) => {
+            resizeStart.current = { y: event.clientY, height: rowHeight };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const start = resizeStart.current;
+            if (!start || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+            onResize(start.height + event.clientY - start.y);
+          }}
+          onPointerUp={(event) => {
+            resizeStart.current = null;
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+          }}
+          onPointerCancel={() => {
+            resizeStart.current = null;
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+            event.preventDefault();
+            onResize(rowHeight + (event.key === 'ArrowUp' ? -4 : 4));
+          }}
+        />
+      )}
     </div>
   );
 }
 
 function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivElement | null> }) {
   const zoom = useSessionStore((s) => s.session.viewport.zoom);
+  const trackViews = useSessionStore((s) => s.session.trackViews);
   const zoomIn = useSessionStore((s) => s.zoomIn);
   const zoomOut = useSessionStore((s) => s.zoomOut);
   const playhead = useEditorStore((s) => s.playhead);
@@ -257,19 +438,33 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
       new Set(selectionRefs.filter((ref) => ref.type === 'clip').map((ref) => ref.id as string)),
     [selectionRefs],
   );
+  const selectedSubtitleIdSet = useMemo(
+    () =>
+      new Set(
+        selectionRefs
+          .filter((ref) => ref.type === 'subtitle-segment')
+          .map((ref) => ref.id as string),
+      ),
+    [selectionRefs],
+  );
   const mediaItems = useEditorStore((s) => s.mediaItems);
   const projectDocument = useProjectStore((s) => s.document);
   const moveClip = useProjectStore((s) => s.moveClip);
   const trimClip = useProjectStore((s) => s.trimClip);
   const splitClip = useProjectStore((s) => s.splitClip);
+  const removeClip = useProjectStore((s) => s.removeClip);
+  const removeClips = useProjectStore((s) => s.removeClips);
   const addTransition = useProjectStore((s) => s.addTransition);
   const subtitleDocument = useSubtitleStore((state) => state.document);
   const selectedSubtitleId = useSessionStore((s) => getSelectedSubtitleSegmentId(s.session));
-  const selectSubtitle = useSubtitleStore((state) => state.select);
   const splitSubtitle = useSubtitleStore((state) => state.split);
+  const updateSubtitle = useSubtitleStore((state) => state.update);
+  const removeSubtitle = useSubtitleStore((state) => state.remove);
+  const removeSubtitles = useSubtitleStore((state) => state.removeMany);
   const setInspectorTab = useEditorStore((state) => state.setInspectorTab);
   const snapEnabled = useSessionStore((s) => s.session.viewport.isSnappingEnabled);
   const [editError, setEditError] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<TimelineContextMenuState | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -328,9 +523,9 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
   // The ruler must cover both the placeholder minimum and whatever real
   // clips exist — a clip placed past the placeholder's 60s must stay visible
   // and seekable rather than getting clipped by the ruler's own width.
-  const contentDuration = Math.max(
+  const contentDuration = getContentDuration(
     getDuration(projectDocument),
-    subtitleDocument.segments.at(-1)?.end ?? 0,
+    subtitleDocument.segments.at(-1)?.end,
   );
   const viewDuration = Math.max(MIN_VIEW_DURATION, contentDuration);
   const width = (viewDuration / 1000) * zoom;
@@ -366,6 +561,101 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
     ),
   ];
 
+  const subtitleSnapTargetsFor = (excludedId: SegmentId): readonly Milliseconds[] => [
+    ms(0),
+    playhead,
+    ...subtitleDocument.segments
+      .filter((segment) => segment.id !== excludedId)
+      .flatMap((segment) => [segment.start, segment.end]),
+  ];
+
+  const selectedClipIds = useMemo(
+    () => selectionRefs.filter((ref) => ref.type === 'clip').map((ref) => ref.id),
+    [selectionRefs],
+  );
+  const selectedSubtitleIds = useMemo(
+    () => selectionRefs.filter((ref) => ref.type === 'subtitle-segment').map((ref) => ref.id),
+    [selectionRefs],
+  );
+
+  const openClipContextMenu = (event: MouseEvent<HTMLButtonElement>, clip: Clip) => {
+    event.preventDefault();
+    const bulk = selectedClipIdSet.has(clip.id) && selectedClipIds.length > 1;
+    const targetIds = bulk ? selectedClipIds : [clip.id];
+    if (!bulk) select({ type: 'clip', id: clip.id });
+    const canSplitHere =
+      targetIds.length === 1 && playhead > clip.start && playhead < clip.start + clip.duration;
+    const hasLockedTarget = projectDocument.tracks.some(
+      (track) =>
+        track.isLocked && track.clips.some((candidate) => targetIds.includes(candidate.id)),
+    );
+
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        {
+          label: 'Split at playhead',
+          disabled: !canSplitHere || hasLockedTarget,
+          onSelect: () => {
+            const result = splitClip(clip.id, playhead);
+            setEditError(result.ok ? null : result.error.recovery);
+            if (result.ok) clearSelection();
+          },
+        },
+        {
+          label: targetIds.length > 1 ? `Delete ${targetIds.length} clips` : 'Delete',
+          disabled: hasLockedTarget,
+          danger: true,
+          onSelect: () => {
+            if (targetIds.length > 1) removeClips(targetIds);
+            else removeClip(clip.id);
+            clearSelection();
+          },
+        },
+      ],
+    });
+  };
+
+  const openSubtitleContextMenu = (
+    event: MouseEvent<HTMLButtonElement>,
+    segment: SubtitleSegment,
+  ) => {
+    event.preventDefault();
+    const bulk = selectedSubtitleIdSet.has(segment.id) && selectedSubtitleIds.length > 1;
+    const targetIds = bulk ? selectedSubtitleIds : [segment.id];
+    if (!bulk) select({ type: 'subtitle-segment', id: segment.id });
+    const canSplitHere =
+      targetIds.length === 1 && playhead > segment.start && playhead < segment.end;
+    const isSubtitleTrackLocked =
+      projectDocument.tracks.find((track) => track.kind === 'subtitle')?.isLocked ?? false;
+
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        {
+          label: 'Split at playhead',
+          disabled: !canSplitHere || isSubtitleTrackLocked,
+          onSelect: () => {
+            const result = splitSubtitle(segment.id, playhead);
+            setEditError(result.ok ? null : result.error.recovery);
+          },
+        },
+        {
+          label: targetIds.length > 1 ? `Delete ${targetIds.length} subtitles` : 'Delete',
+          disabled: isSubtitleTrackLocked,
+          danger: true,
+          onSelect: () => {
+            if (targetIds.length > 1) removeSubtitles(targetIds);
+            else removeSubtitle(segment.id);
+            clearSelection();
+          },
+        },
+      ],
+    });
+  };
+
   return (
     <div ref={viewportRef} className="relative min-w-0 flex-1 overflow-x-auto">
       {editError && (
@@ -388,12 +678,19 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
         {projectDocument.tracks.map((track) => {
           const color = trackColorClass(track.kind);
           const orderedClips = [...track.clips].sort((left, right) => left.start - right.start);
+          const trackView = trackViews[track.id] ?? {
+            isCollapsed: false,
+            rowHeight: SESSION_TRACK_HEIGHT_DEFAULT,
+          };
+          const trackHeight = trackView.isCollapsed
+            ? SESSION_TRACK_HEIGHT_COLLAPSED
+            : trackView.rowHeight;
           return (
             <div
               key={track.id}
-              className="group/track border-border-subtle relative border-b"
+              className="group/track border-border-subtle relative overflow-hidden border-b"
               style={{
-                height: TRACK_HEIGHT,
+                height: trackHeight,
                 // Vertical grid every second, drawn in CSS rather than as
                 // elements: at 60s and 400px/s that would be thousands of DOM
                 // nodes, and the timeline must hold 60fps while scrubbing.
@@ -410,6 +707,7 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
                   snapEnabled={snapEnabled}
                   snapTargets={snapTargetsFor(clip)}
                   selected={selectedClipIdSet.has(clip.id)}
+                  isLocked={track.isLocked}
                   onSelect={(event) => {
                     const ref: TimelineSelectionRef = { type: 'clip', id: clip.id };
                     if (event.shiftKey) {
@@ -422,7 +720,10 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
                           }),
                         ),
                       );
-                    } else if (event.metaKey || event.ctrlKey) {
+                    } else if (
+                      (event.metaKey || event.ctrlKey) &&
+                      selectionRefs.every((selectedRef) => selectedRef.type === 'clip')
+                    ) {
                       toggleSelect(ref);
                     } else {
                       select(ref);
@@ -436,6 +737,7 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
                     const result = trimClip(clip.id, edge, newTime);
                     setEditError(result.ok ? null : result.error.recovery);
                   }}
+                  onContextMenu={(event) => openClipContextMenu(event, clip)}
                 />
               ))}
               {orderedClips.slice(0, -1).map((from, index) => {
@@ -455,6 +757,7 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
                     transition={transition}
                     zoom={zoom}
                     selected={transition?.id === selectedTransitionId}
+                    isLocked={track.isLocked}
                     onActivate={() => {
                       if (transition) {
                         select({ type: 'transition', id: transition.id });
@@ -490,11 +793,53 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
                     start={segment.start}
                     end={segment.end}
                     zoom={zoom}
-                    selected={segment.id === selectedSubtitleId}
-                    onSelect={() => {
-                      selectSubtitle(segment.id);
+                    snapEnabled={snapEnabled}
+                    snapTargets={subtitleSnapTargetsFor(segment.id)}
+                    selected={selectedSubtitleIdSet.has(segment.id)}
+                    isLocked={track.isLocked}
+                    onMove={(newStart) => {
+                      const duration = segment.end - segment.start;
+                      const result = updateSubtitle(segment.id, {
+                        start: newStart,
+                        end: ms(newStart + duration),
+                      });
+                      setEditError(result.ok ? null : result.error.recovery);
+                    }}
+                    onTrim={(edge, newTime) => {
+                      const result = updateSubtitle(
+                        segment.id,
+                        edge === 'start' ? { start: newTime } : { end: newTime },
+                      );
+                      setEditError(result.ok ? null : result.error.recovery);
+                    }}
+                    onSelect={(event) => {
+                      const ref: TimelineSelectionRef = {
+                        type: 'subtitle-segment',
+                        id: segment.id,
+                      };
+                      if (event.shiftKey) {
+                        extendSelect(
+                          ref,
+                          subtitleDocument.segments.map(
+                            (candidate): TimelineSelectionRef => ({
+                              type: 'subtitle-segment',
+                              id: candidate.id,
+                            }),
+                          ),
+                        );
+                      } else if (
+                        (event.metaKey || event.ctrlKey) &&
+                        selectionRefs.every(
+                          (selectedRef) => selectedRef.type === 'subtitle-segment',
+                        )
+                      ) {
+                        toggleSelect(ref);
+                      } else {
+                        select(ref);
+                      }
                       setInspectorTab('subtitle');
                     }}
+                    onContextMenu={(event) => openSubtitleContextMenu(event, segment)}
                   />
                 ))}
             </div>
@@ -508,6 +853,75 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
           onScrub={scrubToClientX}
         />
       </div>
+      {contextMenu && <TimelineContextMenu {...contextMenu} onClose={() => setContextMenu(null)} />}
+    </div>
+  );
+}
+
+function TimelineContextMenu({
+  x,
+  y,
+  items,
+  onClose,
+}: TimelineContextMenuState & { readonly onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) onClose();
+    };
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  useEffect(() => {
+    ref.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+  }, []);
+
+  // Keep the menu on-screen at extreme edges rather than letting it overflow.
+  const left = Math.min(x, (typeof window === 'undefined' ? Infinity : window.innerWidth) - 176);
+  const top = Math.min(
+    y,
+    (typeof window === 'undefined' ? Infinity : window.innerHeight) - items.length * 32 - 16,
+  );
+
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      aria-label="Timeline item actions"
+      className="border-border-default bg-surface-overlay fixed z-(--z-dropdown) min-w-40 rounded-md border p-1 shadow-lg"
+      style={{ left: Math.max(0, left), top: Math.max(0, top) }}
+    >
+      {items.map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          role="menuitem"
+          disabled={item.disabled}
+          onClick={() => {
+            item.onSelect();
+            onClose();
+          }}
+          className={cn(
+            'flex w-full rounded-sm px-2 py-1.5 text-left text-xs',
+            item.danger
+              ? 'text-danger hover:bg-danger-subtle'
+              : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+            'focus-visible:outline-2 focus-visible:outline-(--color-border-focus)',
+            'disabled:text-text-disabled disabled:pointer-events-none',
+          )}
+        >
+          {item.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -518,6 +932,7 @@ function TimelineTransitionControl({
   transition,
   zoom,
   selected,
+  isLocked,
   onActivate,
 }: {
   readonly from: Clip;
@@ -525,6 +940,7 @@ function TimelineTransitionControl({
   readonly transition: ClipTransition | undefined;
   readonly zoom: number;
   readonly selected: boolean;
+  readonly isLocked: boolean;
   readonly onActivate: () => void;
 }) {
   const duration = transition?.duration ?? ms(250);
@@ -537,6 +953,7 @@ function TimelineTransitionControl({
         transition ? `Edit ${transition.kind} transition` : 'Add transition between adjacent clips'
       }
       title={transition ? `Edit ${transition.kind} transition` : 'Add transition'}
+      disabled={isLocked}
       onClick={onActivate}
       className={cn(
         'absolute top-1/2 z-20 flex h-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-sm border',
@@ -545,6 +962,7 @@ function TimelineTransitionControl({
           ? 'border-accent bg-accent-subtle text-accent'
           : 'border-border-default bg-surface-overlay text-text-secondary opacity-0 group-hover/track:opacity-100 focus-visible:opacity-100',
         selected && 'ring-offset-surface-base ring-2 ring-(--color-border-focus) ring-offset-1',
+        'disabled:pointer-events-none disabled:opacity-50',
       )}
       style={{ left: ((from.start + from.duration) / 1000) * zoom, width }}
     >
@@ -556,63 +974,32 @@ function TimelineTransitionControl({
   );
 }
 
-function TimelineSubtitleCue({
-  text,
+/**
+ * Shared pointer-drag mechanics for anything laid out on the timeline as a
+ * `[start, start + duration)` span: move by dragging the body, trim either
+ * edge by dragging a `data-trim-edge` handle. `TimelineClip` and
+ * `TimelineSubtitleCue` both use this — the gesture logic (snap, minimum
+ * length, live preview) is identical for either; only what commits the
+ * final position differs per item kind.
+ */
+function useTimelineSpanGesture({
   start,
-  end,
-  zoom,
-  selected,
-  onSelect,
-}: {
-  readonly text: string;
-  readonly start: Milliseconds;
-  readonly end: Milliseconds;
-  readonly zoom: number;
-  readonly selected: boolean;
-  readonly onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      title={text}
-      aria-label={`${text}, ${((end - start) / 1000).toFixed(2)} seconds`}
-      onClick={onSelect}
-      className={cn(
-        'bg-track-subtitle text-2xs text-text-on-brand absolute top-1 bottom-1 overflow-hidden rounded-sm px-1.5 text-left',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-border-focus)',
-        selected
-          ? 'ring-offset-surface-base ring-2 ring-(--color-border-focus) ring-offset-1'
-          : 'hover:brightness-110',
-      )}
-      style={{ left: (start / 1000) * zoom, width: Math.max(((end - start) / 1000) * zoom, 4) }}
-    >
-      <span className="truncate">{text}</span>
-    </button>
-  );
-}
-
-function TimelineClip({
-  label,
-  color,
-  clip,
+  duration,
   zoom,
   snapEnabled,
   snapTargets,
-  selected,
-  onSelect,
   onMove,
   onTrim,
+  isLocked,
 }: {
-  label: string;
-  color: string;
-  clip: Clip;
-  zoom: number;
-  snapEnabled: boolean;
-  snapTargets: readonly Milliseconds[];
-  selected: boolean;
-  onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
-  onMove: (newStart: Milliseconds) => void;
-  onTrim: (edge: TrimEdge, newTime: Milliseconds) => void;
+  readonly start: Milliseconds;
+  readonly duration: Milliseconds;
+  readonly zoom: number;
+  readonly snapEnabled: boolean;
+  readonly snapTargets: readonly Milliseconds[];
+  readonly onMove: (newStart: Milliseconds) => void;
+  readonly onTrim: (edge: TrimEdge, newTime: Milliseconds) => void;
+  readonly isLocked: boolean;
 }) {
   const gesture = useRef<{ mode: 'move' | TrimEdge; startX: number; hasMoved: boolean } | null>(
     null,
@@ -625,37 +1012,38 @@ function TimelineClip({
     const delta = Math.round((deltaPixels / zoom) * 1000);
     const threshold = ms(Math.round((8 / zoom) * 1000));
     const mode = gesture.current?.mode ?? 'move';
-    const clipEnd = clip.start + clip.duration;
+    const spanEnd = start + duration;
 
     if (mode === 'start') {
-      let start = ms(Math.max(0, Math.min(clipEnd - 10, clip.start + delta)));
-      if (snapEnabled) start = snapTimelineTime(start, snapTargets, threshold);
-      start = ms(Math.max(0, Math.min(clipEnd - 10, start)));
-      return { start, duration: ms(clipEnd - start) };
+      let nextStart = ms(Math.max(0, Math.min(spanEnd - 10, start + delta)));
+      if (snapEnabled) nextStart = snapTimelineTime(nextStart, snapTargets, threshold);
+      nextStart = ms(Math.max(0, Math.min(spanEnd - 10, nextStart)));
+      return { start: nextStart, duration: ms(spanEnd - nextStart) };
     }
 
     if (mode === 'end') {
-      let end = ms(Math.max(clip.start + 10, clipEnd + delta));
-      if (snapEnabled) end = snapTimelineTime(end, snapTargets, threshold);
-      end = ms(Math.max(clip.start + 10, end));
-      return { start: clip.start, duration: ms(end - clip.start) };
+      let nextEnd = ms(Math.max(start + 10, spanEnd + delta));
+      if (snapEnabled) nextEnd = snapTimelineTime(nextEnd, snapTargets, threshold);
+      nextEnd = ms(Math.max(start + 10, nextEnd));
+      return { start, duration: ms(nextEnd - start) };
     }
 
-    let start = ms(Math.max(0, clip.start + delta));
+    let nextStart = ms(Math.max(0, start + delta));
     if (snapEnabled) {
-      const snappedStart = snapTimelineTime(start, snapTargets, threshold);
-      const proposedEnd = ms(start + clip.duration);
+      const snappedStart = snapTimelineTime(nextStart, snapTargets, threshold);
+      const proposedEnd = ms(nextStart + duration);
       const snappedEnd = snapTimelineTime(proposedEnd, snapTargets, threshold);
-      start =
-        Math.abs(snappedStart - start) <= Math.abs(snappedEnd - proposedEnd)
+      nextStart =
+        Math.abs(snappedStart - nextStart) <= Math.abs(snappedEnd - proposedEnd)
           ? snappedStart
-          : ms(snappedEnd - clip.duration);
-      start = ms(Math.max(0, start));
+          : ms(snappedEnd - duration);
+      nextStart = ms(Math.max(0, nextStart));
     }
-    return { start, duration: clip.duration };
+    return { start: nextStart, duration };
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+    if (isLocked) return;
     if (event.button !== 0) return;
     const edge = (event.target as HTMLElement).dataset.trimEdge;
     const mode = edge === 'start' || edge === 'end' ? edge : 'move';
@@ -696,14 +1084,160 @@ function TimelineClip({
     setPreview(null);
   };
 
-  const visible = preview ?? clip;
-  const left = (visible.start / 1000) * zoom;
-  const width = (visible.duration / 1000) * zoom;
+  const visible = preview ?? { start, duration };
+  return {
+    visibleStart: visible.start,
+    visibleDuration: visible.duration,
+    handlePointerDown,
+    handlePointerMove,
+    finishPointer,
+    cancelPointer,
+  };
+}
+
+function TimelineSubtitleCue({
+  text,
+  start,
+  end,
+  zoom,
+  snapEnabled,
+  snapTargets,
+  selected,
+  isLocked,
+  onSelect,
+  onMove,
+  onTrim,
+  onContextMenu,
+}: {
+  readonly text: string;
+  readonly start: Milliseconds;
+  readonly end: Milliseconds;
+  readonly zoom: number;
+  readonly snapEnabled: boolean;
+  readonly snapTargets: readonly Milliseconds[];
+  readonly selected: boolean;
+  readonly isLocked: boolean;
+  readonly onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
+  readonly onMove: (newStart: Milliseconds) => void;
+  readonly onTrim: (edge: TrimEdge, newTime: Milliseconds) => void;
+  readonly onContextMenu: (event: MouseEvent<HTMLButtonElement>) => void;
+}) {
+  const {
+    visibleStart,
+    visibleDuration,
+    handlePointerDown,
+    handlePointerMove,
+    finishPointer,
+    cancelPointer,
+  } = useTimelineSpanGesture({
+    start,
+    duration: ms(end - start),
+    zoom,
+    snapEnabled,
+    snapTargets,
+    onMove,
+    onTrim,
+    isLocked,
+  });
+
+  return (
+    <button
+      type="button"
+      title={text}
+      aria-label={`${text}, ${((end - start) / 1000).toFixed(2)} seconds`}
+      aria-pressed={selected}
+      onClick={onSelect}
+      onContextMenu={onContextMenu}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishPointer}
+      onPointerCancel={cancelPointer}
+      className={cn(
+        'group bg-track-subtitle text-2xs text-text-on-brand absolute top-1 bottom-1 cursor-grab touch-none overflow-hidden rounded-sm px-1.5 text-left active:cursor-grabbing',
+        'transition-shadow duration-(--duration-fast)',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-border-focus)',
+        selected
+          ? 'ring-offset-surface-base ring-2 ring-(--color-border-focus) ring-offset-1'
+          : 'hover:brightness-110',
+        isLocked && 'cursor-default active:cursor-default',
+      )}
+      style={{
+        left: (visibleStart / 1000) * zoom,
+        width: Math.max((visibleDuration / 1000) * zoom, 4),
+      }}
+    >
+      {!isLocked && (
+        <span
+          data-trim-edge="start"
+          className="bg-surface-overlay/40 absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100"
+          aria-hidden="true"
+        />
+      )}
+      <span className="truncate">{text}</span>
+      {!isLocked && (
+        <span
+          data-trim-edge="end"
+          className="bg-surface-overlay/40 absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100"
+          aria-hidden="true"
+        />
+      )}
+    </button>
+  );
+}
+
+function TimelineClip({
+  label,
+  color,
+  clip,
+  zoom,
+  snapEnabled,
+  snapTargets,
+  selected,
+  isLocked,
+  onSelect,
+  onMove,
+  onTrim,
+  onContextMenu,
+}: {
+  label: string;
+  color: string;
+  clip: Clip;
+  zoom: number;
+  snapEnabled: boolean;
+  snapTargets: readonly Milliseconds[];
+  selected: boolean;
+  isLocked: boolean;
+  onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
+  onMove: (newStart: Milliseconds) => void;
+  onTrim: (edge: TrimEdge, newTime: Milliseconds) => void;
+  onContextMenu: (event: MouseEvent<HTMLButtonElement>) => void;
+}) {
+  const {
+    visibleStart,
+    visibleDuration,
+    handlePointerDown,
+    handlePointerMove,
+    finishPointer,
+    cancelPointer,
+  } = useTimelineSpanGesture({
+    start: clip.start,
+    duration: clip.duration,
+    zoom,
+    snapEnabled,
+    snapTargets,
+    onMove,
+    onTrim,
+    isLocked,
+  });
+
+  const left = (visibleStart / 1000) * zoom;
+  const width = (visibleDuration / 1000) * zoom;
 
   return (
     <button
       type="button"
       onClick={onSelect}
+      onContextMenu={onContextMenu}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={finishPointer}
@@ -719,21 +1253,26 @@ function TimelineClip({
         selected
           ? 'ring-offset-surface-base ring-2 ring-(--color-border-focus) ring-offset-1'
           : 'hover:brightness-110',
+        isLocked && 'cursor-default active:cursor-default',
       )}
       // Guard against a sliver too thin to click at extreme zoom-out.
       style={{ left, width: Math.max(width, 4) }}
     >
-      <span
-        data-trim-edge="start"
-        className="bg-surface-overlay/40 absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100"
-        aria-hidden="true"
-      />
+      {!isLocked && (
+        <span
+          data-trim-edge="start"
+          className="bg-surface-overlay/40 absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100"
+          aria-hidden="true"
+        />
+      )}
       <span className="truncate">{label}</span>
-      <span
-        data-trim-edge="end"
-        className="bg-surface-overlay/40 absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100"
-        aria-hidden="true"
-      />
+      {!isLocked && (
+        <span
+          data-trim-edge="end"
+          className="bg-surface-overlay/40 absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100"
+          aria-hidden="true"
+        />
+      )}
     </button>
   );
 }

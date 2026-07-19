@@ -1,0 +1,10 @@
+{
+  "apiVersion": 1,
+  "id": "example.neon-glow",
+  "name": "Neon Glow",
+  "version": "1.0.0",
+  "description": "Adds a neon-glow subtitle style — the reference example for the ADR-0009 Phase 5 v1 plugin runtime.",
+  "entrypoint": "index.js",
+  "surfaces": ["subtitle-template"],
+  "capabilities": ["renderer.register"]
+}

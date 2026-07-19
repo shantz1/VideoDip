@@ -12,7 +12,11 @@ import {
   type SubtitleStyle,
 } from '@videodip/subtitle-engine';
 import { ms, type Milliseconds, type Result, type SegmentId } from '@videodip/shared';
-import { getDuration, getSelectedSubtitleSegmentId } from '@videodip/timeline';
+import {
+  createTimelineRuntimeIndex,
+  getDuration,
+  getSelectedSubtitleSegmentId,
+} from '@videodip/timeline';
 import { create } from 'zustand';
 import { useEditorStore } from './editor.store';
 import { useProjectStore } from './project.store';
@@ -31,10 +35,19 @@ interface SubtitleState {
     patch: Partial<Omit<SubtitleSegment, 'id'>>,
   ) => Result<SubtitleDocument>;
   readonly remove: (id: SegmentId) => void;
+  /** Removes several cues in one undoable document edit. */
+  readonly removeMany: (ids: readonly SegmentId[]) => void;
   readonly split: (id: SegmentId, at: Milliseconds) => Result<SubtitleDocument>;
   readonly replace: (document: SubtitleDocument) => void;
   readonly setLanguage: (language: string | null) => void;
   readonly setDefaultStyle: (style: SubtitleStyle) => void;
+  /** Applies one style patch to several cue overrides in one undo step. */
+  readonly applyStyleToSegments: (
+    ids: readonly SegmentId[],
+    patch: Partial<SubtitleStyle>,
+  ) => Result<SubtitleDocument>;
+  /** Applies a style to the document default and every existing cue in one undo step. */
+  readonly applyStyleToAll: (patch: Partial<SubtitleStyle>) => Result<SubtitleDocument>;
   /** Updates a live style draft without touching document history. */
   readonly previewStyle: (id: SegmentId, patch: Partial<SubtitleStyle>) => void;
   /** Applies the accumulated style draft as one undoable document edit. */
@@ -75,6 +88,14 @@ export const useSubtitleStore = create<SubtitleState>()((set, get) => ({
     const next = removeSegment(current, id);
     if (next.segments.length !== current.segments.length) commit(next, null);
   },
+  removeMany: (ids) => {
+    const selectedIds = new Set(ids);
+    if (selectedIds.size === 0) return;
+    const current = get().document;
+    const next = current.segments.filter((segment) => !selectedIds.has(segment.id));
+    if (next.length === current.segments.length) return;
+    commit({ ...current, segments: next }, null);
+  },
   split: (id, at) => {
     const result = splitSegment(get().document, id, at);
     if (result.ok)
@@ -95,6 +116,31 @@ export const useSubtitleStore = create<SubtitleState>()((set, get) => ({
       { ...get().document, defaultStyle },
       getSelectedSubtitleSegmentId(useSessionStore.getState().session),
     ),
+  applyStyleToSegments: (ids, patch) => {
+    const selectedIds = [...new Set(ids)];
+    let next = get().document;
+    for (const id of selectedIds) {
+      const result = updateSegment(next, id, { style: patch });
+      if (!result.ok) return result;
+      next = result.value;
+    }
+    if (selectedIds.length > 0) commit(next);
+    return { ok: true, value: next };
+  },
+  applyStyleToAll: (patch) => {
+    const current = get().document;
+    let next: SubtitleDocument = {
+      ...current,
+      defaultStyle: { ...current.defaultStyle, ...patch },
+    };
+    for (const segment of current.segments) {
+      const result = updateSegment(next, segment.id, { style: patch });
+      if (!result.ok) return result;
+      next = result.value;
+    }
+    commit(next);
+    return { ok: true, value: next };
+  },
   previewStyle: (id, patch) =>
     set((state) => {
       const current = state.stylePreviews[id] ?? {};
@@ -129,7 +175,7 @@ export const useSubtitleStore = create<SubtitleState>()((set, get) => ({
       past: state.past.slice(0, -1),
       future: [state.document, ...state.future],
     });
-    selectSubtitleSegment(previous.segments[0]?.id ?? null);
+    reconcileSubtitleSelection(previous);
     useEditorStore.getState().markDirty();
   },
   redo: () => {
@@ -142,7 +188,7 @@ export const useSubtitleStore = create<SubtitleState>()((set, get) => ({
       past: [...state.past, state.document],
       future,
     });
-    selectSubtitleSegment(next.segments[0]?.id ?? null);
+    reconcileSubtitleSelection(next);
     useEditorStore.getState().markDirty();
   },
   reset: () => {
@@ -174,7 +220,7 @@ function selectSubtitleSegment(id: SegmentId | null): void {
   }
 }
 
-function commit(document: SubtitleDocument, selectedSegmentId: SegmentId | null): void {
+function commit(document: SubtitleDocument, selectedSegmentId?: SegmentId | null): void {
   const state = useSubtitleStore.getState();
   useSubtitleStore.setState({
     document,
@@ -182,9 +228,19 @@ function commit(document: SubtitleDocument, selectedSegmentId: SegmentId | null)
     past: [...state.past, state.document],
     future: [],
   });
-  selectSubtitleSegment(selectedSegmentId);
+  if (selectedSegmentId !== undefined) selectSubtitleSegment(selectedSegmentId);
   useEditorStore.getState().markDirty();
   syncDuration(document);
+}
+
+/** Keeps every still-valid session ref selected across subtitle history changes. */
+function reconcileSubtitleSelection(document: SubtitleDocument): void {
+  const index = createTimelineRuntimeIndex(useProjectStore.getState().document);
+  if (!index.ok) return;
+  const segmentIds = new Set(document.segments.map((segment) => segment.id));
+  useSessionStore.getState().reconcile(index.value, {
+    hasSubtitleSegment: (id) => segmentIds.has(id),
+  });
 }
 
 function withoutPreview(

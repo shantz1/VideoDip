@@ -1,9 +1,10 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "bundle": {
-    "externalBin": ["binaries/whisper-cli"],
+    "externalBin": ["binaries/whisper-cli", "binaries/node"],
     "resources": {
-      "binaries/*.dll": "."
+      "binaries/*.dll": ".",
+      "resources/render/**/*": "render/"
     }
   }
 }

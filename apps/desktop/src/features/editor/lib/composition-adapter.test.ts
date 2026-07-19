@@ -1,5 +1,11 @@
 import { ms, type AssetId, type TrackId } from '@videodip/shared';
-import { addClip, addTransition, createTimeline, createTrack } from '@videodip/timeline';
+import {
+  addClip,
+  addTransition,
+  createTimeline,
+  createTrack,
+  updateTrackState,
+} from '@videodip/timeline';
 import { describe, expect, it } from 'vitest';
 import { addSubtitleSegment, createSubtitleDocument } from '@videodip/subtitle-engine';
 import { toCompositionClips, toCompositionSubtitles } from './composition-adapter';
@@ -72,6 +78,16 @@ describe('toCompositionClips', () => {
 
   it('returns an empty list for an empty timeline', () => {
     expect(toCompositionClips(createEmptyTimeline(), resolveVideo)).toHaveLength(0);
+  });
+
+  it('omits hidden tracks and combines track mute with clip audio', () => {
+    let hidden = docWithClip(VIDEO, 0, 1000);
+    hidden = unwrapTimeline(updateTrackState(hidden, VIDEO, { isVisible: false }));
+    expect(toCompositionClips(hidden, resolveVideo)).toEqual([]);
+
+    let muted = docWithClip(VIDEO, 0, 1000);
+    muted = unwrapTimeline(updateTrackState(muted, VIDEO, { isMuted: true }));
+    expect(toCompositionClips(muted, resolveVideo)[0]?.audio.isMuted).toBe(true);
   });
 
   it('orders layers from audio through video to topmost subtitles', () => {

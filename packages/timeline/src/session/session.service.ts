@@ -1,4 +1,4 @@
-import type { ClipId, SegmentId, TransitionId } from '@videodip/shared';
+import type { ClipId, SegmentId, TrackId, TransitionId } from '@videodip/shared';
 import type { TimelineRuntimeIndex } from '../runtime-index/runtime-index.types.js';
 import type {
   ClipTransformPreview,
@@ -9,6 +9,7 @@ import type {
   SessionReconcileGuards,
   TimelineSelectionRef,
   TimelineTool,
+  TrackViewState,
 } from './session.types.js';
 import type { ClipTransform } from '../document/document.types.js';
 
@@ -21,6 +22,14 @@ export const SESSION_ZOOM_DEFAULT = 50;
  * additive step feels enormous zoomed out and useless zoomed in.
  */
 export const SESSION_ZOOM_STEP = 1.3;
+/** Default expanded track row height in CSS pixels. */
+export const SESSION_TRACK_HEIGHT_DEFAULT = 44;
+/** Smallest user-resizable expanded track row height. */
+export const SESSION_TRACK_HEIGHT_MIN = 32;
+/** Largest user-resizable track row height. */
+export const SESSION_TRACK_HEIGHT_MAX = 160;
+/** Compact height used while a track is collapsed. */
+export const SESSION_TRACK_HEIGHT_COLLAPSED = 28;
 
 function clampZoom(zoom: number): number {
   return Math.min(SESSION_ZOOM_MAX, Math.max(SESSION_ZOOM_MIN, zoom));
@@ -57,6 +66,51 @@ export function createEditingSession(input?: CreateEditingSessionInput): Editing
     viewport: { zoom, isSnappingEnabled },
     activeTool: input?.activeTool ?? 'select',
     clipTransformPreview: null,
+    trackViews: {},
+  };
+}
+
+/** Returns one track's ephemeral view state, supplying stable defaults when absent. */
+export function getSessionTrackView(session: EditingSession, trackId: TrackId): TrackViewState {
+  return (
+    session.trackViews[trackId] ?? {
+      isCollapsed: false,
+      rowHeight: SESSION_TRACK_HEIGHT_DEFAULT,
+    }
+  );
+}
+
+/** Collapses or expands one track row without changing the project document. */
+export function toggleSessionTrackCollapsed(
+  session: EditingSession,
+  trackId: TrackId,
+): EditingSession {
+  const current = getSessionTrackView(session, trackId);
+  return {
+    ...session,
+    trackViews: {
+      ...session.trackViews,
+      [trackId]: { ...current, isCollapsed: !current.isCollapsed },
+    },
+  };
+}
+
+/** Resizes one expanded track row, clamped to the supported UI range. */
+export function setSessionTrackRowHeight(
+  session: EditingSession,
+  trackId: TrackId,
+  rowHeight: number,
+): EditingSession {
+  if (!Number.isFinite(rowHeight)) return session;
+  const current = getSessionTrackView(session, trackId);
+  const clamped = Math.min(
+    SESSION_TRACK_HEIGHT_MAX,
+    Math.max(SESSION_TRACK_HEIGHT_MIN, Math.round(rowHeight)),
+  );
+  if (current.rowHeight === clamped) return session;
+  return {
+    ...session,
+    trackViews: { ...session.trackViews, [trackId]: { ...current, rowHeight: clamped } },
   };
 }
 
@@ -155,6 +209,18 @@ export function isSessionRefSelected(session: EditingSession, ref: TimelineSelec
 export function getSessionSelectedClipIds(session: EditingSession): readonly ClipId[] {
   return session.selection.refs
     .filter((ref): ref is Extract<TimelineSelectionRef, { type: 'clip' }> => ref.type === 'clip')
+    .map((ref) => ref.id);
+}
+
+/** All subtitle segment ids currently in the selection, in `refs` order. */
+export function getSessionSelectedSubtitleSegmentIds(
+  session: EditingSession,
+): readonly SegmentId[] {
+  return session.selection.refs
+    .filter(
+      (ref): ref is Extract<TimelineSelectionRef, { type: 'subtitle-segment' }> =>
+        ref.type === 'subtitle-segment',
+    )
     .map((ref) => ref.id);
 }
 
@@ -281,6 +347,15 @@ export function reconcileSession(
     !index.clipsById.has(next.clipTransformPreview.clipId)
   ) {
     next = { ...next, clipTransformPreview: null };
+  }
+  const trackViewEntries = Object.entries(next.trackViews).filter(([trackId]) =>
+    index.tracksById.has(trackId as TrackId),
+  );
+  if (trackViewEntries.length !== Object.keys(next.trackViews).length) {
+    next = {
+      ...next,
+      trackViews: Object.fromEntries(trackViewEntries) as Readonly<Record<TrackId, TrackViewState>>,
+    };
   }
   return next;
 }

@@ -53,6 +53,13 @@ export const DEFAULT_CLIP_AUDIO: ClipAudioSettings = {
   fadeOut: 0 as Milliseconds,
 };
 
+/** Persisted defaults assigned to every newly created track. */
+export const DEFAULT_TRACK_STATE = {
+  isVisible: true,
+  isMuted: false,
+  isLocked: false,
+} as const;
+
 /** Built-in transition ids supported consistently by preview and FFmpeg export. */
 export const CORE_TRANSITION_KINDS: readonly CoreTransitionKind[] = [
   'crossfade',
@@ -67,6 +74,9 @@ export const CORE_TRANSITION_KINDS: readonly CoreTransitionKind[] = [
   'wipe-up',
   'wipe-down',
   'zoom-in',
+  'circle-open',
+  'diagonal-top-left',
+  'diagonal-bottom-right',
 ];
 
 /** Creates a timeline from consumer-chosen tracks and transition relations. */
@@ -105,13 +115,16 @@ export function validateTimeline(document: TimelineDocument): Result<TimelineDoc
       trackIds.has(track.id) ||
       !String(track.id).trim() ||
       !track.kind.trim() ||
-      !track.label.trim()
+      !track.label.trim() ||
+      typeof track.isVisible !== 'boolean' ||
+      typeof track.isMuted !== 'boolean' ||
+      typeof track.isLocked !== 'boolean'
     ) {
       return err(
         appError(
           'VALIDATION',
-          'Timeline tracks must have unique IDs, kinds, and labels.',
-          'Rename or remove the invalid track before continuing.',
+          'Timeline tracks must have unique IDs, kinds, labels, and valid state flags.',
+          'Repair or remove the invalid track before continuing.',
         ),
       );
     }
@@ -206,6 +219,16 @@ export interface CreateTrackInput {
   readonly id?: TrackId;
   readonly kind: TrackKind;
   readonly label: string;
+  readonly isVisible?: boolean;
+  readonly isMuted?: boolean;
+  readonly isLocked?: boolean;
+}
+
+/** Editable persisted track fields. At least one field must be supplied by callers. */
+export interface UpdateTrackStateInput {
+  readonly isVisible?: boolean;
+  readonly isMuted?: boolean;
+  readonly isLocked?: boolean;
 }
 
 /** Creates one empty generic track. Kind is metadata, not a closed enum. */
@@ -217,8 +240,48 @@ export function createTrack(
     id: input.id ?? idProvider.nextTrackId(),
     kind: input.kind,
     label: input.label,
+    isVisible: input.isVisible ?? DEFAULT_TRACK_STATE.isVisible,
+    isMuted: input.isMuted ?? DEFAULT_TRACK_STATE.isMuted,
+    isLocked: input.isLocked ?? DEFAULT_TRACK_STATE.isLocked,
     clips: [],
   };
+}
+
+/** Updates persisted track state without changing clip content or ordering. */
+export function updateTrackState(
+  document: TimelineDocument,
+  trackId: TrackId,
+  patch: UpdateTrackStateInput,
+): Result<TimelineDocument> {
+  const track = document.tracks.find((candidate) => candidate.id === trackId);
+  if (!track) {
+    return err(appError('NOT_FOUND', `No track with id "${trackId}".`, 'Refresh the timeline.'));
+  }
+  if (
+    patch.isVisible === undefined &&
+    patch.isMuted === undefined &&
+    patch.isLocked === undefined
+  ) {
+    return err(
+      appError(
+        'VALIDATION',
+        'A track-state edit must change visibility, mute, or lock state.',
+        'Choose a track control before applying the edit.',
+      ),
+    );
+  }
+  const updated: Track = { ...track, ...patch };
+  if (
+    updated.isVisible === track.isVisible &&
+    updated.isMuted === track.isMuted &&
+    updated.isLocked === track.isLocked
+  ) {
+    return ok(document);
+  }
+  return ok({
+    ...document,
+    tracks: document.tracks.map((candidate) => (candidate.id === trackId ? updated : candidate)),
+  });
 }
 
 /** Inserts an empty track at an explicit top-to-bottom visual position. */

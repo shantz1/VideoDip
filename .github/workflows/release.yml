@@ -34,6 +34,13 @@ jobs:
       # (tauri.release.conf.json externalBin/resources).
       - run: pnpm ai:provision:windows
 
+      # ADR-0011: the release bundle also ships a Node sidecar plus a
+      # pruned @videodip/renderer + pre-downloaded Chrome Headless Shell, so
+      # an installed build can render composited (not just cuts-only)
+      # exports with zero network access at export time.
+      - run: pnpm render:provision:node:windows
+      - run: pnpm render:stage:release:windows
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

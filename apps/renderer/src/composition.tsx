@@ -426,6 +426,7 @@ function RenderedClip({ clip }: { readonly clip: CompositionClip }) {
       <OffthreadVideo
         src={clip.src}
         trimBefore={clip.sourceStartFrame}
+        volume={(audioFrame) => audioVolume(clip, audioFrame)}
         style={{
           height: '100%',
           width: '100%',
@@ -497,6 +498,18 @@ function transitionVisualState(clip: CompositionClip, frame: number): Transition
     if (incoming.kind === 'wipe-up') clipPath = `inset(0 0 ${(1 - progress) * 100}% 0)`;
     if (incoming.kind === 'wipe-down') clipPath = `inset(${(1 - progress) * 100}% 0 0 0)`;
     if (incoming.kind === 'zoom-in') scale *= 1 + (1 - progress) * ZOOM_IN_AMOUNT;
+    // Radius overshoots the frame diagonal so every aspect ratio is fully
+    // covered by progress 1, not just a square frame.
+    if (incoming.kind === 'circle-open') clipPath = `circle(${progress * 150}% at 50% 50%)`;
+    // The far corners extend to 200% so the growing triangle always reaches
+    // past the opposite edge, regardless of aspect ratio.
+    if (incoming.kind === 'diagonal-top-left') {
+      clipPath = `polygon(0 0, ${progress * 200}% 0, 0 ${progress * 200}%)`;
+    }
+    if (incoming.kind === 'diagonal-bottom-right') {
+      const reach = 100 - progress * 200;
+      clipPath = `polygon(100% 100%, ${reach}% 100%, 100% ${reach}%)`;
+    }
   }
 
   const outgoing = clip.transitionOut;
@@ -545,7 +558,10 @@ function isDirectionalTransition(kind: string): boolean {
     kind === 'wipe-left' ||
     kind === 'wipe-right' ||
     kind === 'wipe-up' ||
-    kind === 'wipe-down'
+    kind === 'wipe-down' ||
+    kind === 'circle-open' ||
+    kind === 'diagonal-top-left' ||
+    kind === 'diagonal-bottom-right'
   );
 }
 

@@ -1,6 +1,6 @@
 import { ms, type AssetId, type Result, type TrackId } from '@videodip/shared';
 import { addSubtitleSegment, createSubtitleDocument } from '@videodip/subtitle-engine';
-import { addClip, createTimeline, createTrack } from '@videodip/timeline';
+import { addClip, createTimeline, createTrack, updateTrackState } from '@videodip/timeline';
 import { describe, expect, it } from 'vitest';
 import { buildRenderProps } from './render-video';
 
@@ -78,6 +78,33 @@ describe('buildRenderProps', () => {
     const props = unwrap(buildRenderProps(docWithClip(0, 2000), added.value, resolveVideo, '9:16'));
     expect(props.settings.durationInFrames).toBe(120);
     expect(props.subtitles).toHaveLength(1);
+  });
+
+  it('omits subtitles from Full render when the subtitle track is hidden', () => {
+    const added = addSubtitleSegment(emptySubtitles, {
+      start: ms(0),
+      end: ms(1000),
+      text: 'Hidden caption',
+      words: [],
+    });
+    if (!added.ok) throw new Error(added.error.message);
+    let document = createTimeline([
+      createTrack({ id: 'subtitle' as TrackId, kind: 'subtitle', label: 'Subtitles' }),
+      createTrack({ id: VIDEO, kind: 'video', label: 'Video' }),
+    ]);
+    document = unwrap(
+      addClip(document, {
+        trackId: VIDEO,
+        assetId: ASSET,
+        start: ms(0),
+        duration: ms(1000),
+      }),
+    );
+    document = unwrap(updateTrackState(document, 'subtitle' as TrackId, { isVisible: false }));
+
+    expect(unwrap(buildRenderProps(document, added.value, resolveVideo, '9:16')).subtitles).toEqual(
+      [],
+    );
   });
 
   it('applies the selected export preset fps and keeps the project aspect ratio', () => {

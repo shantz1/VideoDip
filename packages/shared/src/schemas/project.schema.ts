@@ -142,6 +142,9 @@ const projectTrackSchema = z
     id: trackIdSchema,
     kind: z.string().trim().min(1).max(128),
     label: z.string().trim().min(1).max(128),
+    isVisible: z.boolean().default(true),
+    isMuted: z.boolean().default(false),
+    isLocked: z.boolean().default(false),
     clips: z.array(projectClipSchema),
   })
   .superRefine((track, context) => {

@@ -9,13 +9,35 @@ import {
   type Clip,
   type ClipAnimationProperty,
   type ClipBlendMode,
+  type ClipKeyframe,
   type ClipKeyframeEasing,
   type ClipTransform,
   type ClipTransition,
   type CoreTransitionKind,
 } from '@videodip/timeline';
 import { Button, cn } from '@videodip/ui';
-import { MousePointerClick, SlidersHorizontal, Sparkles, Trash2 } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowDownRight,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowUpLeft,
+  ChevronsDown,
+  ChevronsLeft,
+  ChevronsRight,
+  ChevronsUp,
+  Circle,
+  Layers,
+  Moon,
+  MousePointerClick,
+  SlidersHorizontal,
+  Sparkles,
+  Sun,
+  Trash2,
+  ZoomIn as ZoomInIcon,
+  type LucideIcon,
+} from 'lucide-react';
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditorStore, type InspectorTab } from '../editor.store';
 import { useProjectStore } from '../project.store';
@@ -53,6 +75,17 @@ export function RightInspector({ fillAvailableWidth = false }: RightInspectorPro
   const selectedTransition = selectedTransitionId
     ? timelineDocument.transitions.find((transition) => transition.id === selectedTransitionId)
     : undefined;
+  const selectedClipTrack = selectedClip
+    ? timelineDocument.tracks.find((track) => track.id === selectedClip.trackId)
+    : undefined;
+  const selectedTransitionTrack = selectedTransition
+    ? timelineDocument.tracks.find((track) => track.id === selectedTransition.trackId)
+    : undefined;
+  const subtitleTrack = timelineDocument.tracks.find((track) => track.kind === 'subtitle');
+  const isEditingLocked =
+    (tab === 'subtitle' && subtitleTrack?.isLocked === true) ||
+    (tab === 'effects' && selectedTransitionTrack?.isLocked === true) ||
+    (tab !== 'subtitle' && tab !== 'effects' && selectedClipTrack?.isLocked === true);
 
   if (collapsed) return null;
 
@@ -112,31 +145,41 @@ export function RightInspector({ fillAvailableWidth = false }: RightInspectorPro
         tabIndex={0}
         className="flex-1 overflow-y-auto"
       >
-        {tab === 'subtitle' ? (
-          <SubtitleEditor />
-        ) : tab === 'effects' && selectedTransition ? (
-          <TransitionControls transition={selectedTransition} />
-        ) : !selectedClip ? (
-          <EmptyState
-            icon={MousePointerClick}
-            title="Nothing selected"
-            description="Select a clip on the timeline to edit its properties."
-          />
-        ) : tab === 'properties' ? (
-          <ClipProperties clip={selectedClip} />
-        ) : tab === 'transform' ? (
-          <ClipTransformControls clip={selectedClip} />
-        ) : tab === 'animation' ? (
-          <ClipAnimationControls clip={selectedClip} />
-        ) : tab === 'audio' ? (
-          <ClipAudioControls clip={selectedClip} />
-        ) : (
-          <EmptyState
-            icon={SlidersHorizontal}
-            title={`${TABS.find((item) => item.id === tab)?.label ?? 'Module'} controls`}
-            description="This module has no editable parameters for the selected clip yet."
-          />
+        {isEditingLocked && (
+          <p
+            role="status"
+            className="bg-surface-inset text-text-secondary m-2 rounded-md px-2 py-1.5 text-xs"
+          >
+            This track is locked. Unlock it in the timeline to edit its contents.
+          </p>
         )}
+        <fieldset disabled={isEditingLocked} className="contents">
+          {tab === 'subtitle' ? (
+            <SubtitleEditor />
+          ) : tab === 'effects' && selectedTransition ? (
+            <TransitionControls transition={selectedTransition} />
+          ) : !selectedClip ? (
+            <EmptyState
+              icon={MousePointerClick}
+              title="Nothing selected"
+              description="Select a clip on the timeline to edit its properties."
+            />
+          ) : tab === 'properties' ? (
+            <ClipProperties clip={selectedClip} />
+          ) : tab === 'transform' ? (
+            <ClipTransformControls clip={selectedClip} />
+          ) : tab === 'animation' ? (
+            <ClipAnimationControls clip={selectedClip} />
+          ) : tab === 'audio' ? (
+            <ClipAudioControls clip={selectedClip} />
+          ) : (
+            <EmptyState
+              icon={SlidersHorizontal}
+              title={`${TABS.find((item) => item.id === tab)?.label ?? 'Module'} controls`}
+              description="This module has no editable parameters for the selected clip yet."
+            />
+          )}
+        </fieldset>
       </div>
     </aside>
   );
@@ -155,7 +198,100 @@ const TRANSITION_LABELS: Readonly<Record<CoreTransitionKind, string>> = {
   'wipe-up': 'Wipe up',
   'wipe-down': 'Wipe down',
   'zoom-in': 'Zoom in',
+  'circle-open': 'Circle open',
+  'diagonal-top-left': 'Diagonal (top-left)',
+  'diagonal-bottom-right': 'Diagonal (bottom-right)',
 };
+
+/** One glyph per built-in transition — arrows/chevrons echo direction, single vs double stroke tells slide from wipe apart at a glance. */
+const TRANSITION_ICONS: Readonly<Record<CoreTransitionKind, LucideIcon>> = {
+  crossfade: Layers,
+  'dip-to-black': Moon,
+  'dip-to-white': Sun,
+  'slide-left': ArrowLeft,
+  'slide-right': ArrowRight,
+  'slide-up': ArrowUp,
+  'slide-down': ArrowDown,
+  'wipe-left': ChevronsLeft,
+  'wipe-right': ChevronsRight,
+  'wipe-up': ChevronsUp,
+  'wipe-down': ChevronsDown,
+  'zoom-in': ZoomInIcon,
+  'circle-open': Circle,
+  'diagonal-top-left': ArrowUpLeft,
+  'diagonal-bottom-right': ArrowDownRight,
+};
+
+/**
+ * A visual grid of transition styles — clicking a cell applies it
+ * immediately, matching the pick-a-look UX of Filmora/CapCut's transition
+ * browser instead of a plain `<select>`. An unrecognized (plugin) kind gets
+ * its own cell so it stays visible and selectable even though it has no
+ * icon/label in the built-in map.
+ */
+function TransitionStyleGrid({
+  value,
+  onChange,
+}: {
+  readonly value: string;
+  readonly onChange: (kind: string) => void;
+}) {
+  const isPluginKind = !CORE_TRANSITION_KINDS.some((kind) => kind === value);
+  return (
+    <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Transition style">
+      {isPluginKind && (
+        <TransitionStyleCell
+          label={value}
+          Icon={Sparkles}
+          selected
+          onClick={() => onChange(value)}
+        />
+      )}
+      {CORE_TRANSITION_KINDS.map((kind) => (
+        <TransitionStyleCell
+          key={kind}
+          label={TRANSITION_LABELS[kind]}
+          Icon={TRANSITION_ICONS[kind]}
+          selected={kind === value}
+          onClick={() => onChange(kind)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TransitionStyleCell({
+  label,
+  Icon,
+  selected,
+  onClick,
+}: {
+  readonly label: string;
+  readonly Icon: LucideIcon;
+  readonly selected: boolean;
+  readonly onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      title={label}
+      onClick={onClick}
+      className={cn(
+        'flex flex-col items-center gap-1 rounded-md border px-1.5 py-2 text-center',
+        'transition-colors duration-(--duration-fast)',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-border-focus)',
+        selected
+          ? 'border-accent bg-accent-subtle text-accent'
+          : 'border-border-subtle bg-surface-raised text-text-secondary hover:border-border-default hover:bg-surface-hover',
+      )}
+    >
+      <Icon className="size-4" aria-hidden="true" />
+      <span className="text-2xs truncate leading-tight">{label}</span>
+    </button>
+  );
+}
 
 function TransitionControls({ transition }: { readonly transition: ClipTransition }) {
   const document = useProjectStore((state) => state.document);
@@ -197,20 +333,7 @@ function TransitionControls({ transition }: { readonly transition: ClipTransitio
       )}
 
       <InspectorField label="Style">
-        <select
-          value={transition.kind}
-          onChange={(event) => apply({ kind: event.currentTarget.value })}
-          className={controlClassName}
-        >
-          {!CORE_TRANSITION_KINDS.some((kind) => kind === transition.kind) && (
-            <option value={transition.kind}>{transition.kind} (plugin)</option>
-          )}
-          {CORE_TRANSITION_KINDS.map((kind) => (
-            <option key={kind} value={kind}>
-              {TRANSITION_LABELS[kind]}
-            </option>
-          ))}
-        </select>
+        <TransitionStyleGrid value={transition.kind} onChange={(kind) => apply({ kind })} />
       </InspectorField>
 
       <InspectorField label="Duration" suffix="s">
@@ -537,6 +660,128 @@ function getClipAnimationValue(clip: Clip, property: ClipAnimationProperty): num
   return property === 'opacity' ? clip.opacity : clip.transform[property];
 }
 
+/** One clip-relative keyframe pair (start -> end) for a single property. */
+type PresetKeyframePair = readonly [start: number, end: number];
+
+interface ClipAnimationPreset {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  /**
+   * `entrance` presets animate over the first ~500ms (or the whole clip if
+   * shorter) — a one-time "in" motion. Continuous presets animate across the
+   * clip's full duration — an ambient effect for as long as it's on screen.
+   */
+  readonly span: 'entrance' | 'full';
+  /** Values are relative to the clip's *current* static value — 0 means "no change". */
+  readonly deltas: Partial<
+    Record<'positionX' | 'positionY' | 'scaleX' | 'scaleY', PresetKeyframePair>
+  >;
+  readonly easing: ClipKeyframeEasing;
+}
+
+/**
+ * Preset clip motion library — the "Ken Burns"/pan continuous effects and
+ * "slide/pop" one-time entrances every mainstream short-form editor ships,
+ * built on the existing keyframe model rather than a parallel animation
+ * system. Presets only ever replace keyframes on the properties they touch
+ * (see `applyPresetKeyframes`), so a Zoom preset and a Slide-in preset (or
+ * the existing Fade in/out opacity buttons) compose freely.
+ */
+const CLIP_ANIMATION_PRESETS: readonly ClipAnimationPreset[] = [
+  {
+    id: 'zoom-in',
+    name: 'Zoom In',
+    description: 'Slow continuous zoom in across the whole clip (Ken Burns).',
+    span: 'full',
+    deltas: { scaleX: [0, 0.15], scaleY: [0, 0.15] },
+    easing: 'linear',
+  },
+  {
+    id: 'zoom-out',
+    name: 'Zoom Out',
+    description: 'Slow continuous zoom out across the whole clip (Ken Burns).',
+    span: 'full',
+    deltas: { scaleX: [0.15, 0], scaleY: [0.15, 0] },
+    easing: 'linear',
+  },
+  {
+    id: 'pan-left-right',
+    name: 'Pan Left to Right',
+    description: 'Gentle horizontal drift across the whole clip.',
+    span: 'full',
+    deltas: { positionX: [-0.06, 0.06] },
+    easing: 'linear',
+  },
+  {
+    id: 'pan-right-left',
+    name: 'Pan Right to Left',
+    description: 'Gentle horizontal drift, reversed.',
+    span: 'full',
+    deltas: { positionX: [0.06, -0.06] },
+    easing: 'linear',
+  },
+  {
+    id: 'pop-in',
+    name: 'Pop In',
+    description: 'Scales up from slightly smaller as the clip begins.',
+    span: 'entrance',
+    deltas: { scaleX: [-0.15, 0], scaleY: [-0.15, 0] },
+    easing: 'ease-out',
+  },
+  {
+    id: 'slide-in-left',
+    name: 'Slide In from Left',
+    description: 'Enters from off-screen left, settling into place.',
+    span: 'entrance',
+    deltas: { positionX: [-0.35, 0] },
+    easing: 'ease-out',
+  },
+  {
+    id: 'slide-in-right',
+    name: 'Slide In from Right',
+    description: 'Enters from off-screen right, settling into place.',
+    span: 'entrance',
+    deltas: { positionX: [0.35, 0] },
+    easing: 'ease-out',
+  },
+];
+
+function buildPresetKeyframes(
+  clip: Clip,
+  preset: ClipAnimationPreset,
+): {
+  readonly touchedProperties: readonly ClipAnimationProperty[];
+  readonly keyframes: readonly ClipKeyframe[];
+} {
+  const startOffset = ms(0);
+  const endOffset = preset.span === 'entrance' ? ms(Math.min(500, clip.duration)) : clip.duration;
+  const touchedProperties = Object.keys(preset.deltas) as readonly ClipAnimationProperty[];
+  const keyframes = touchedProperties.flatMap((property): ClipKeyframe[] => {
+    const delta = preset.deltas[property as keyof ClipAnimationPreset['deltas']];
+    if (!delta) return [];
+    const base = getClipAnimationValue(clip, property);
+    const [startDelta, endDelta] = delta;
+    return [
+      { property, offset: startOffset, value: base + startDelta, easing: preset.easing },
+      { property, offset: endOffset, value: base + endDelta, easing: preset.easing },
+    ];
+  });
+  return { touchedProperties, keyframes };
+}
+
+/** Replaces keyframes only on the properties a preset touches; everything else is kept. */
+function applyPresetKeyframes(
+  existing: readonly ClipKeyframe[],
+  touchedProperties: readonly ClipAnimationProperty[],
+  keyframes: readonly ClipKeyframe[],
+): readonly ClipKeyframe[] {
+  return [
+    ...existing.filter((keyframe) => !touchedProperties.includes(keyframe.property)),
+    ...keyframes,
+  ];
+}
+
 function ClipAnimationControls({ clip }: { readonly clip: Clip }) {
   const setClipAnimation = useProjectStore((state) => state.setClipAnimation);
   const [property, setProperty] = useState<ClipAnimationProperty>('opacity');
@@ -592,6 +837,33 @@ function ClipAnimationControls({ clip }: { readonly clip: Clip }) {
         <Button size="xs" variant="secondary" onClick={() => addFade('out')}>
           Fade out
         </Button>
+      </div>
+      <div>
+        <p className="text-text-tertiary mb-1.5 text-xs font-medium">Motion presets</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {CLIP_ANIMATION_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              title={preset.description}
+              aria-label={`${preset.name} (${preset.span === 'entrance' ? 'entrance' : 'continuous'})`}
+              onClick={() => {
+                const { touchedProperties, keyframes } = buildPresetKeyframes(clip, preset);
+                apply(applyPresetKeyframes(clip.animation, touchedProperties, keyframes));
+              }}
+              className={cn(
+                'border-border-subtle bg-surface-raised rounded-md border px-2 py-1.5 text-left text-xs',
+                'hover:bg-surface-hover hover:border-border-default transition-colors duration-(--duration-fast)',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-border-focus)',
+              )}
+            >
+              <span className="text-text-primary block font-medium">{preset.name}</span>
+              <span className="text-text-tertiary text-2xs mt-0.5 block">
+                {preset.span === 'entrance' ? 'Entrance' : 'Continuous'}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
       <InspectorField label="Property">
         <select

@@ -8,11 +8,13 @@ import {
   previewSessionClipTransform,
   reconcileSession,
   selectSessionItem,
+  setSessionTrackRowHeight,
   setSessionTool,
   setSessionZoom,
   stepSessionZoom,
   toggleSessionSelection,
   toggleSessionSnapping,
+  toggleSessionTrackCollapsed,
   type EditingSession,
   type ClipTransform,
   type SessionReconcileGuards,
@@ -47,6 +49,13 @@ export interface SessionState {
   readonly zoomIn: () => void;
   readonly zoomOut: () => void;
   readonly toggleSnapping: () => void;
+  /** Collapses or expands one track row without touching the project document. */
+  readonly toggleTrackCollapsed: (trackId: import('@videodip/shared').TrackId) => void;
+  /** Sets one track's ephemeral row height in CSS pixels. */
+  readonly setTrackRowHeight: (
+    trackId: import('@videodip/shared').TrackId,
+    rowHeight: number,
+  ) => void;
   readonly setTool: (tool: TimelineTool) => void;
   /** Publishes a renderer-only direct-manipulation transform. */
   readonly previewClipTransform: (
@@ -107,6 +116,15 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     }),
 
   toggleSnapping: () => set((state) => ({ session: toggleSessionSnapping(state.session) })),
+
+  toggleTrackCollapsed: (trackId) =>
+    set((state) => ({ session: toggleSessionTrackCollapsed(state.session, trackId) })),
+
+  setTrackRowHeight: (trackId, rowHeight) =>
+    set((state) => {
+      const next = setSessionTrackRowHeight(state.session, trackId, rowHeight);
+      return next === state.session ? state : { session: next };
+    }),
 
   setTool: (tool) =>
     set((state) => {

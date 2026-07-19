@@ -21,6 +21,9 @@ const FFMPEG_TRANSITIONS: Readonly<Record<string, string>> = {
   'wipe-up': 'wipeup',
   'wipe-down': 'wipedown',
   'zoom-in': 'zoomin',
+  'circle-open': 'circleopen',
+  'diagonal-top-left': 'diagtl',
+  'diagonal-bottom-right': 'diagbr',
 };
 
 /**

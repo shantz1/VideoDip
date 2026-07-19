@@ -1,5 +1,11 @@
 import { ms, type AssetId, type TrackId } from '@videodip/shared';
-import { addClip, addTransition, createTimeline, createTrack } from '@videodip/timeline';
+import {
+  addClip,
+  addTransition,
+  createTimeline,
+  createTrack,
+  updateTrackState,
+} from '@videodip/timeline';
 import { describe, expect, it } from 'vitest';
 import { exportFrameSize, resolveExportSettings, toExportClips } from './export-video';
 
@@ -98,6 +104,22 @@ describe('toExportClips', () => {
         isEnabled: false,
       }),
     );
+    expect(unwrap(toExportClips(doc, () => 'C:\\media\\a.mp4'))).toEqual([]);
+  });
+
+  it('omits hidden tracks and applies track mute to native export audio', () => {
+    let doc = unwrap(
+      addClip(createEmptyTimeline(), {
+        trackId: VIDEO,
+        assetId: ASSET_A,
+        start: ms(0),
+        duration: ms(1000),
+      }),
+    );
+    doc = unwrap(updateTrackState(doc, VIDEO, { isMuted: true }));
+    expect(unwrap(toExportClips(doc, () => 'C:\\media\\a.mp4'))[0]?.audio.isMuted).toBe(true);
+
+    doc = unwrap(updateTrackState(doc, VIDEO, { isVisible: false }));
     expect(unwrap(toExportClips(doc, () => 'C:\\media\\a.mp4'))).toEqual([]);
   });
 

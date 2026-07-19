@@ -46,6 +46,7 @@ export function toCompositionClips(
   // top, so flatten from the bottom track upward. This preserves arbitrary
   // overlay/plugin kinds without a hard-coded kind ranking.
   for (const track of [...document.tracks].reverse()) {
+    if (!track.isVisible) continue;
     for (const clip of track.clips) {
       const asset = resolveAsset(clip.assetId);
       if (asset === undefined) continue;
@@ -70,7 +71,7 @@ export function toCompositionClips(
         })),
         audio: {
           volume: clip.audio.volume,
-          isMuted: clip.audio.isMuted,
+          isMuted: track.isMuted || clip.audio.isMuted,
           fadeInFrames: msToFrames(clip.audio.fadeIn, frameRate),
           fadeOutFrames: msToFrames(clip.audio.fadeOut, frameRate),
         },

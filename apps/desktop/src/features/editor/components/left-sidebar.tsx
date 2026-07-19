@@ -14,16 +14,15 @@ import {
   type ProjectSummary,
   type TranscriptionModelStatus,
 } from '@videodip/shared';
-import { findFreeStart } from '@videodip/timeline';
+import { findFreeStart, type TimelineSelectionRef } from '@videodip/timeline';
 import { Button, cn, useTheme, type ThemeMode } from '@videodip/ui';
-import { parseTemplate, resolveTemplate } from '@videodip/template-engine';
-import type { SubtitleStyle } from '@videodip/subtitle-engine';
+import { parseTemplate, resolveTemplate, type TemplateDefinition } from '@videodip/template-engine';
+import { resolveSubtitleStyle, type SubtitleStyle } from '@videodip/subtitle-engine';
 import {
   ArchiveRestore,
   FileArchive,
   FolderOpen,
   Image,
-  LayoutTemplate,
   LayoutGrid,
   List,
   Music,
@@ -31,6 +30,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Puzzle,
   Settings,
   Shuffle,
   Sparkles,
@@ -39,7 +39,7 @@ import {
   Video,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEditorStore, type AspectRatio, type SidebarPanel } from '../editor.store';
 import { useEditorHost } from '../host/editor-host';
 import {
@@ -50,7 +50,9 @@ import {
 } from '../lib/project-commands';
 import { flattenTimelineAudio } from '../lib/transcribe-timeline';
 import { transcriptionToSubtitles } from '../lib/transcription-to-subtitles';
+import { usePluginStore } from '../plugin.store';
 import { useProjectStore } from '../project.store';
+import { useSessionStore } from '../session.store';
 import { useSubtitleStore } from '../subtitle.store';
 import { EmptyState } from './empty-state';
 import { useProjectArchiveController } from './project-archive-controller';
@@ -74,7 +76,7 @@ interface PanelDef {
 const PANELS: readonly PanelDef[] = [
   { id: 'projects', label: 'Projects', icon: FolderOpen },
   { id: 'media', label: 'Media', icon: Video },
-  { id: 'templates', label: 'Templates', icon: LayoutTemplate },
+  { id: 'templates', label: 'Text styles', icon: Type },
   { id: 'ai', label: 'AI', icon: Sparkles },
   { id: 'assets', label: 'Assets', icon: Image },
   { id: 'fonts', label: 'Fonts', icon: Type },
@@ -185,7 +187,7 @@ function PanelBody({ panel }: { panel: SidebarPanel }) {
     case 'projects':
       return <ProjectsPanel />;
     case 'templates':
-      return <TemplatesPanel />;
+      return <TextStylesPanel />;
     case 'ai':
       return <AiPanel />;
     case 'assets':
@@ -498,7 +500,7 @@ function languageName(code: string): string {
 /**
  * Built-in subtitle style templates. Every field is data validated by
  * `@videodip/template-engine`'s Zod schema and resolves onto
- * `SubtitleDocument.defaultStyle` — see `TemplatesPanel.apply` below. Fonts
+ * `SubtitleDocument.defaultStyle` — see `TextStylesPanel.apply` below. Fonts
  * reference the bundled caption font pack (`@videodip/renderer`'s
  * `caption-fonts.css`); everything renders identically offline.
  */
@@ -691,13 +693,31 @@ export const CAPTION_TEMPLATES = [
   },
 ] as const;
 
-export function TemplatesPanel() {
-  const currentStyle = useSubtitleStore((state) => state.document.defaultStyle);
+export function TextStylesPanel() {
+  const subtitleDocument = useSubtitleStore((state) => state.document);
   const setDefaultStyle = useSubtitleStore((state) => state.setDefaultStyle);
+  const applyStyleToSegments = useSubtitleStore((state) => state.applyStyleToSegments);
+  const applyStyleToAll = useSubtitleStore((state) => state.applyStyleToAll);
+  const selectionRefs = useSessionStore((state) => state.session.selection.refs);
+  const select = useSessionStore((state) => state.select);
+  const extendSelect = useSessionStore((state) => state.extendSelect);
+  const pluginTemplates = usePluginStore((state) => state.templates);
   const [error, setError] = useState<string | null>(null);
   const [lastAppliedId, setLastAppliedId] = useState<string | null>(null);
+  const selectedSubtitleIds = useMemo(
+    () => selectionRefs.filter((ref) => ref.type === 'subtitle-segment').map((ref) => ref.id),
+    [selectionRefs],
+  );
+  // CAPTION_TEMPLATES' literal `id` strings satisfy templateIdSchema at
+  // runtime (validated by the `is data` test below) but aren't branded
+  // TemplateId at the type level; the cast reconciles that with plugin
+  // templates, which come out of parseTemplate already branded.
+  const allTemplates: readonly TemplateDefinition[] = useMemo(
+    () => [...(CAPTION_TEMPLATES as unknown as readonly TemplateDefinition[]), ...pluginTemplates],
+    [pluginTemplates],
+  );
 
-  const apply = (source: (typeof CAPTION_TEMPLATES)[number]) => {
+  const apply = (source: TemplateDefinition, target: 'selection-or-default' | 'all') => {
     const parsed = parseTemplate(source);
     if (!parsed.ok) {
       setError(parsed.error.recovery);
@@ -714,7 +734,19 @@ export function TemplatesPanel() {
       return;
     }
     const payload = resolved.value as Partial<SubtitleStyle>;
-    setDefaultStyle({ ...currentStyle, ...payload });
+    const result =
+      target === 'all'
+        ? applyStyleToAll(payload)
+        : selectedSubtitleIds.length > 0
+          ? applyStyleToSegments(selectedSubtitleIds, payload)
+          : null;
+    if (result !== null && !result.ok) {
+      setError(result.error.recovery);
+      return;
+    }
+    if (result === null) {
+      setDefaultStyle({ ...subtitleDocument.defaultStyle, ...payload });
+    }
     setLastAppliedId(source.id);
     setError(null);
   };
@@ -722,34 +754,228 @@ export function TemplatesPanel() {
   // Picks a different template than the one just applied, so repeated clicks
   // always visibly change the look instead of occasionally no-op'ing.
   const applyAuto = () => {
-    const candidates = CAPTION_TEMPLATES.filter((template) => template.id !== lastAppliedId);
-    const pool = candidates.length > 0 ? candidates : CAPTION_TEMPLATES;
+    const candidates = allTemplates.filter((template) => template.id !== lastAppliedId);
+    const pool = candidates.length > 0 ? candidates : allTemplates;
     const choice = pool[Math.floor(Math.random() * pool.length)];
-    if (choice) apply(choice);
+    if (choice) apply(choice, 'selection-or-default');
+  };
+
+  const selectAllSubtitles = () => {
+    const refs = subtitleDocument.segments.map(
+      (segment): TimelineSelectionRef => ({ type: 'subtitle-segment', id: segment.id }),
+    );
+    const first = refs[0];
+    const last = refs.at(-1);
+    if (!first || !last) return;
+    select(first);
+    if (refs.length > 1) extendSelect(last, refs);
   };
 
   return (
     <div className="flex flex-col gap-2">
       <p className="text-text-tertiary text-xs">
-        Templates are validated JSON data and affect every cue that has not overridden the style.
+        Apply a visual style to selected timeline subtitles, or apply it to every subtitle.
       </p>
+      <div className="border-border-subtle bg-surface-inset flex items-center justify-between gap-2 rounded-md border px-2 py-1.5">
+        <span className="text-text-secondary text-xs">
+          {selectedSubtitleIds.length > 0
+            ? `${selectedSubtitleIds.length} subtitle${selectedSubtitleIds.length === 1 ? '' : 's'} selected`
+            : 'No subtitles selected'}
+        </span>
+        <Button
+          size="xs"
+          variant="ghost"
+          disabled={subtitleDocument.segments.length === 0}
+          onClick={selectAllSubtitles}
+        >
+          Select all
+        </Button>
+      </div>
       {error && <PanelErrorNotice message={error} />}
       <Button size="sm" variant="secondary" leadingIcon={<Shuffle />} onClick={applyAuto}>
-        Auto
+        Auto style
       </Button>
-      {CAPTION_TEMPLATES.map((template) => (
-        <button
+      {allTemplates.map((template) => (
+        <article
           key={template.id}
-          type="button"
-          onClick={() => apply(template)}
-          className="border-border-subtle hover:bg-surface-hover rounded-md border p-3 text-left focus-visible:outline-2 focus-visible:outline-(--color-border-focus)"
+          aria-label={`${template.name} text style`}
+          className="border-border-subtle bg-surface-raised overflow-hidden rounded-md border"
         >
-          <span className="text-text-primary block text-sm font-medium">{template.name}</span>
-          <span className="text-text-tertiary mt-0.5 block text-xs">{template.description}</span>
-        </button>
+          <TextStylePreview
+            style={resolveSubtitleStyle(
+              subtitleDocument.defaultStyle,
+              template.payload as Partial<SubtitleStyle>,
+            )}
+          />
+          <div className="flex flex-col gap-2 p-2.5">
+            <div>
+              <span className="text-text-primary block text-sm font-medium">{template.name}</span>
+              <span className="text-text-tertiary mt-0.5 block text-xs">
+                {template.description}
+              </span>
+            </div>
+            <div className="flex gap-1.5">
+              <Button
+                size="xs"
+                variant="secondary"
+                className="min-w-0 flex-1"
+                onClick={() => apply(template, 'selection-or-default')}
+              >
+                {selectedSubtitleIds.length > 0
+                  ? `Apply to selected (${selectedSubtitleIds.length})`
+                  : 'Set as default'}
+              </Button>
+              <Button
+                size="xs"
+                variant="ghost"
+                disabled={subtitleDocument.segments.length === 0}
+                onClick={() => apply(template, 'all')}
+              >
+                Apply to all
+              </Button>
+            </div>
+          </div>
+        </article>
       ))}
+      <PluginManagerSection />
     </div>
   );
+}
+
+/**
+ * Local-folder plugin install/enable UI (ADR-0009 Phase 5 v1 — see
+ * `docs/adr/0009-phase-5-plugin-runtime-v1.md`). No registry, no download:
+ * the user points at a folder containing `manifest.json` and its entrypoint.
+ * The only capability wired up today is subtitle template registration,
+ * which surfaces its result in the template grid above.
+ */
+function PluginManagerSection() {
+  const plugins = usePluginStore((state) => state.plugins);
+  const isInstalling = usePluginStore((state) => state.isInstalling);
+  const installFromFolder = usePluginStore((state) => state.installFromFolder);
+  const setEnabled = usePluginStore((state) => state.setEnabled);
+  const uninstall = usePluginStore((state) => state.uninstall);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleInstall = async () => {
+    const result = await installFromFolder();
+    setError(result.ok ? null : result.error.recovery);
+  };
+
+  return (
+    <div className="border-border-subtle mt-2 flex flex-col gap-2 border-t pt-3">
+      <div className="flex items-center justify-between">
+        <span className="text-text-secondary flex items-center gap-1.5 text-xs font-medium">
+          <Puzzle className="size-3.5" aria-hidden="true" />
+          Plugins
+        </span>
+        <Button
+          size="xs"
+          variant="ghost"
+          loading={isInstalling}
+          onClick={() => void handleInstall()}
+        >
+          Install from folder
+        </Button>
+      </div>
+      {error && <PanelErrorNotice message={error} />}
+      {plugins.length === 0 ? (
+        <p className="text-text-tertiary text-xs">
+          No plugins installed. A plugin can add subtitle style templates.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {plugins.map((plugin) => (
+            <li
+              key={plugin.manifest.id}
+              className="border-border-subtle bg-surface-raised flex items-center justify-between gap-2 rounded-md border px-2 py-1.5"
+            >
+              <div className="min-w-0">
+                <span className="text-text-primary block truncate text-xs font-medium">
+                  {plugin.manifest.name}{' '}
+                  <span className="text-text-tertiary font-normal">v{plugin.manifest.version}</span>
+                </span>
+                {plugin.fault && <span className="text-danger block text-2xs">{plugin.fault}</span>}
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  aria-pressed={plugin.enabled}
+                  className={cn(plugin.enabled && 'bg-surface-selected text-accent')}
+                  onClick={() => setEnabled(plugin.manifest.id, !plugin.enabled)}
+                >
+                  {plugin.enabled ? 'Enabled' : 'Disabled'}
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={`Uninstall ${plugin.manifest.name}`}
+                  onClick={() => uninstall(plugin.manifest.id)}
+                  leadingIcon={<Trash2 />}
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Compact, data-driven sample of a fully resolved subtitle style. */
+function TextStylePreview({ style }: { readonly style: SubtitleStyle }) {
+  const previewFontSize = Math.max(14, Math.min(30, style.fontSize / 2));
+  const background = style.backgroundEnabled
+    ? cssColorWithOpacity(style.background, style.backgroundOpacity)
+    : 'transparent';
+  const shadow =
+    style.shadowOpacity > 0
+      ? `${style.shadowOffsetX}px ${style.shadowOffsetY}px ${style.shadowBlur}px ${cssColorWithOpacity(
+          style.shadowColor,
+          style.shadowOpacity,
+        )}`
+      : undefined;
+
+  return (
+    <div
+      data-text-style-preview
+      className="bg-surface-sunken flex h-20 items-center justify-center overflow-hidden px-3"
+    >
+      <span
+        className="max-w-full truncate"
+        style={{
+          fontFamily: style.fontFamily,
+          fontSize: `${previewFontSize}px`,
+          fontWeight: style.fontWeight,
+          fontStyle: style.isItalic ? 'italic' : 'normal',
+          textDecoration: style.isUnderlined ? 'underline' : 'none',
+          letterSpacing: style.letterSpacing,
+          lineHeight: style.lineHeight,
+          color: style.foreground,
+          opacity: style.opacity,
+          background,
+          padding: style.backgroundEnabled ? Math.min(style.padding / 2, 8) : 0,
+          borderRadius: style.backgroundEnabled ? Math.min(style.borderRadius / 2, 8) : 0,
+          textAlign: style.alignment,
+          WebkitTextStroke:
+            style.strokeWidth > 0
+              ? `${Math.min(style.strokeWidth, 2)}px ${style.strokeColor}`
+              : undefined,
+          paintOrder: 'stroke fill',
+          textShadow: shadow,
+          transform: `rotate(${style.rotation}deg) scale(${Math.min(style.scale, 1.15)})`,
+        }}
+      >
+        Your captions
+      </span>
+    </div>
+  );
+}
+
+/** Preserves template color opacity without introducing UI palette values. */
+function cssColorWithOpacity(color: string, opacity: number): string {
+  return `color-mix(in srgb, ${color} ${Math.round(opacity * 100)}%, transparent)`;
 }
 
 const THEME_OPTIONS: readonly { mode: ThemeMode; label: string }[] = [
@@ -842,7 +1068,7 @@ function AspectRatioSelector() {
  * the toolbar's project name, the unsaved-changes indicator, and the
  * timeline clearing.
  */
-function ProjectsPanel() {
+export function ProjectsPanel() {
   const { projects } = useEditorHost();
   const archiveController = useProjectArchiveController();
   const projectId = useEditorStore((s) => s.projectId);
@@ -1092,12 +1318,15 @@ function ProjectsPanel() {
                     <Button
                       size="xs"
                       variant={confirming ? 'danger' : 'ghost'}
-                      disabled={renaming || active || (busyId !== null && busyId !== project.id)}
+                      aria-label={
+                        confirming ? `Confirm delete ${project.name}` : `Delete ${project.name}`
+                      }
+                      disabled={renaming || (busyId !== null && busyId !== project.id)}
                       loading={busyId === project.id && confirming}
                       leadingIcon={<Trash2 />}
                       onClick={() => handleDelete(project.id)}
                     >
-                      {confirming ? 'Confirm' : 'Delete'}
+                      {confirming ? (active ? 'Delete open project' : 'Confirm delete') : 'Delete'}
                     </Button>
                   </div>
                 </li>

@@ -1,6 +1,6 @@
 import { createMediaItem } from '@videodip/media-engine';
 import { mediaLocatorSchema, ms } from '@videodip/shared';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEditorStore } from '../editor.store';
 import { useProjectStore } from '../project.store';
@@ -107,5 +107,26 @@ describe('ClipPreviewOverlay', () => {
       useProjectStore.getState().document.tracks.flatMap((track) => track.clips)[0]?.transform
         .scaleX,
     ).toBe(1);
+  });
+
+  it('does not expose transform handles for hidden or locked tracks', () => {
+    setupSelectedVideo();
+    const videoTrack = useProjectStore
+      .getState()
+      .document.tracks.find((track) => track.kind === 'video');
+    if (!videoTrack) throw new Error('Expected video track.');
+    useProjectStore.getState().updateTrackState(videoTrack.id, { isLocked: true });
+
+    const view = render(<ClipPreviewOverlay />);
+    expect(screen.queryByRole('button', { name: 'Move video: video.mp4' })).toBeNull();
+
+    act(() => {
+      useProjectStore.getState().updateTrackState(videoTrack.id, {
+        isLocked: false,
+        isVisible: false,
+      });
+    });
+    view.rerender(<ClipPreviewOverlay />);
+    expect(screen.queryByRole('button', { name: 'Move video: video.mp4' })).toBeNull();
   });
 });

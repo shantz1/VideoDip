@@ -81,13 +81,18 @@ export function PreviewPlayer() {
   }, [clipTransformPreview, documentValue, mediaItems, resolveMediaSource]);
 
   const subtitleDuration = subtitleDocument.segments.at(-1)?.end ?? 0;
+  const areSubtitlesVisible =
+    documentValue.tracks.find((track) => track.kind === 'subtitle')?.isVisible ?? true;
   const durationInFrames = Math.max(
     1,
     msToFrames(Math.max(getDuration(documentValue), subtitleDuration) as never, PROJECT_FPS),
   );
   const subtitles = useMemo(
-    () => toCompositionSubtitles(subtitleDocument, PROJECT_FPS, subtitleStylePreviews),
-    [subtitleDocument, subtitleStylePreviews],
+    () =>
+      areSubtitlesVisible
+        ? toCompositionSubtitles(subtitleDocument, PROJECT_FPS, subtitleStylePreviews)
+        : [],
+    [areSubtitlesVisible, subtitleDocument, subtitleStylePreviews],
   );
 
   // store.isPlaying → player transport.

@@ -2,6 +2,7 @@ mod archive;
 mod artifact;
 mod export;
 mod persistence;
+mod plugin;
 mod probe;
 mod render;
 mod whisper;
@@ -26,6 +27,7 @@ pub fn run() {
             persistence::list_projects,
             persistence::load_project,
             persistence::save_project,
+            plugin::load_plugin_from_folder,
             probe::probe_media,
             render::cancel_render,
             render::get_render_status,

@@ -24,6 +24,7 @@ export function toTimelineAudioClips(
 ): Result<readonly TimelineAudioClip[]> {
   const clips: TimelineAudioClip[] = [];
   for (const track of document.tracks) {
+    if (!track.isVisible) continue;
     for (const clip of track.clips) {
       if (!clip.isEnabled) continue;
       const src = resolvePath(clip.assetId);
@@ -42,7 +43,7 @@ export function toTimelineAudioClips(
         duration: clip.duration,
         start: clip.start,
         volume: clip.audio.volume,
-        isMuted: clip.audio.isMuted,
+        isMuted: track.isMuted || clip.audio.isMuted,
       });
     }
   }

@@ -20,6 +20,7 @@ import {
   updateClipProperties,
   updateClipAudio,
   updateTransition,
+  updateTrackState,
   validateTimeline,
 } from './document.service.js';
 import type { TrackId } from '@videodip/shared';
@@ -50,6 +51,23 @@ describe('generic tracks', () => {
     ]);
 
     expect(doc.tracks.map((track) => track.kind)).toEqual(['subtitle', 'plugin:mask']);
+  });
+
+  it('assigns safe persisted defaults and updates track state immutably', () => {
+    const document = createEmptyTimeline();
+    const before = document.tracks[0];
+    expect(before).toMatchObject({ isVisible: true, isMuted: false, isLocked: false });
+
+    const updated = unwrap(updateTrackState(document, VIDEO, { isMuted: true, isLocked: true }));
+    expect(updated.tracks[0]).toMatchObject({ isVisible: true, isMuted: true, isLocked: true });
+    expect(document.tracks[0]).toBe(before);
+    expect(document.tracks[0]).toMatchObject({ isMuted: false, isLocked: false });
+  });
+
+  it('rejects an empty track-state patch', () => {
+    const result = updateTrackState(createEmptyTimeline(), VIDEO, {});
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('VALIDATION');
   });
 
   it('adds a track at an explicit visual index', () => {
@@ -142,6 +160,17 @@ describe('validateTimeline', () => {
   it('rejects a timeline from an unsupported schema version', () => {
     const result = validateTimeline({ ...createEmptyTimeline(), schemaVersion: 1 as 2 });
     expect(result.ok).toBe(false);
+  });
+
+  it('rejects malformed persisted track flags', () => {
+    const document = createEmptyTimeline();
+    const malformed = {
+      ...document,
+      tracks: document.tracks.map((track) =>
+        track.id === VIDEO ? { ...track, isVisible: 'yes' as unknown as boolean } : track,
+      ),
+    };
+    expect(validateTimeline(malformed).ok).toBe(false);
   });
 });
 

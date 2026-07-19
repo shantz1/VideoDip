@@ -21,9 +21,12 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,md,json,yaml,yml,css}\"",
     "ai:provision:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/provision-whisper-runtime.ps1",
     "render:provision:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/provision-render-runtime.ps1",
+    "render:provision:node:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/provision-node-runtime.ps1",
+    "render:stage:release:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/stage-render-resources.ps1",
     "clean": "node scripts/clean-generated.mjs",
     "clean:check": "node scripts/clean-generated.mjs --dry-run",
     "clean:all": "node scripts/clean-generated.mjs --dependencies",
+    "whisper:accuracy": "node scripts/whisper-accuracy/run.mjs",
     "verify": "turbo run typecheck lint test"
   },
   "devDependencies": {

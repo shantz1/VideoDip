@@ -1,4 +1,4 @@
-import type { ClipId, SegmentId, TransitionId } from '@videodip/shared';
+import type { ClipId, SegmentId, TrackId, TransitionId } from '@videodip/shared';
 import type { ClipTransform } from '../document/document.types.js';
 
 /**
@@ -72,6 +72,12 @@ export interface ClipTransformPreview {
   readonly transform: ClipTransform;
 }
 
+/** Non-persisted presentation state for one timeline track row. */
+export interface TrackViewState {
+  readonly isCollapsed: boolean;
+  readonly rowHeight: number;
+}
+
 /**
  * Ephemeral, per-open-document editing state.
  *
@@ -91,6 +97,8 @@ export interface EditingSession {
   readonly viewport: EditingSessionViewport;
   readonly activeTool: TimelineTool;
   readonly clipTransformPreview: ClipTransformPreview | null;
+  /** UI geometry keyed by track id; never serialized or included in undo. */
+  readonly trackViews: Readonly<Record<TrackId, TrackViewState>>;
 }
 
 /** Optional overrides for `createEditingSession`; omitted fields use defaults. */

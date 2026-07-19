@@ -97,6 +97,7 @@ export function buildRenderProps(
   if (requestedPreset && !requestedPreset.ok) return requestedPreset;
 
   for (const track of document.tracks) {
+    if (!track.isVisible) continue;
     for (const clip of track.clips) {
       if (clip.isEnabled && resolveAsset(clip.assetId) === undefined) {
         return err(
@@ -132,7 +133,10 @@ export function buildRenderProps(
 
   return ok({
     clips,
-    subtitles: toCompositionSubtitles(subtitles, frameRate),
+    subtitles:
+      document.tracks.find((track) => track.kind === 'subtitle')?.isVisible === false
+        ? []
+        : toCompositionSubtitles(subtitles, frameRate),
     settings: {
       ...exportFrameSize(aspectRatio),
       fps: frameRate,

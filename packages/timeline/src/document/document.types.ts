@@ -49,7 +49,10 @@ export type CoreTransitionKind =
   | 'wipe-right'
   | 'wipe-up'
   | 'wipe-down'
-  | 'zoom-in';
+  | 'zoom-in'
+  | 'circle-open'
+  | 'diagonal-top-left'
+  | 'diagonal-bottom-right';
 
 /**
  * An effect joining two adjacent clips on the same generic track.
@@ -122,6 +125,12 @@ export interface Track {
   readonly id: TrackId;
   readonly kind: TrackKind;
   readonly label: string;
+  /** Hidden tracks remain editable but do not participate in preview or export. */
+  readonly isVisible: boolean;
+  /** Track mute is combined with each clip's own audio mute setting at render time. */
+  readonly isMuted: boolean;
+  /** Locked tracks reject content, transition, removal, and reorder edit intents. */
+  readonly isLocked: boolean;
   readonly clips: readonly Clip[];
 }
 

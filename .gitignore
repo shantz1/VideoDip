@@ -159,7 +159,8 @@ whisper-models/
 !assets/samples/**
 
 # --- Bundled binaries --------------------------------------------------------
-# FFmpeg and Whisper binaries are fetched per-platform at build time.
+# FFmpeg, Whisper and the Node render sidecar are fetched per-platform at
+# build time.
 bin/
 vendor/
 apps/desktop/src-tauri/binaries/*
@@ -167,6 +168,13 @@ apps/desktop/src-tauri/binaries/*
 ffmpeg.exe
 ffprobe.exe
 *.dll
+
+# --- Bundled release resources ------------------------------------------------
+# The staged render runtime (pruned @videodip/renderer + node_modules + a
+# pre-downloaded Chrome Headless Shell) is a release build input, not source —
+# see scripts/stage-render-resources.ps1.
+apps/desktop/src-tauri/resources/*
+!apps/desktop/src-tauri/resources/README.md
 *.dylib
 *.so
 

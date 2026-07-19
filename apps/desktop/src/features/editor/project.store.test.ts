@@ -63,6 +63,23 @@ describe('generic tracks', () => {
     expect(state().document.tracks.some((candidate) => candidate.id === track.id)).toBe(false);
     expect(state().past.length).toBeGreaterThanOrEqual(3);
   });
+
+  it('stores track state as one undoable planner transaction', () => {
+    const before = state().document.tracks.find((track) => track.kind === 'video');
+    if (!before) throw new Error('Expected video track.');
+    expect(state().updateTrackState(before.id, { isMuted: true, isLocked: true }).ok).toBe(true);
+    expect(state().document.tracks.find((track) => track.id === before.id)).toMatchObject({
+      isMuted: true,
+      isLocked: true,
+    });
+    expect(state().past.at(-1)?.label).toBe('Lock track');
+
+    state().undo();
+    expect(state().document.tracks.find((track) => track.id === before.id)).toMatchObject({
+      isMuted: false,
+      isLocked: false,
+    });
+  });
 });
 
 describe('removeClip', () => {

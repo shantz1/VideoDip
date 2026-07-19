@@ -19,13 +19,42 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
 
 ## Queued (decision-gated or requires product infrastructure)
 
-- [ ] **Multilingual Whisper acceptance matrix** — all languages exposed by
-      the bundled multilingual model remain selectable, with explicit
-      accuracy/performance fixtures for English, Hindi, Marathi, Tamil, Telugu,
-      Gujarati and Bengali plus code-switching and a representative foreign
-      language set. Transcription in the source language and translation are
-      separate features; Whisper translation-to-English must not be presented
-      as general language-to-language translation.
+- [ ] **Detach Audio (requested 2026-07-19)** — implement as an
+      architecture-safe Timeline Engine v2 slice, not a UI-only duplicate.
+      One undoable planner transaction must mute the source video clip and
+      create a linked audio-role clip from the same media source. Preview,
+      Full render, and Fast FFmpeg export must all honor the detached stream;
+      the work therefore needs the Phase 6 clip-role/link foundation and the
+      Phase 9 linked-A/V and multi-stream export path. Include stream
+      eligibility, target-track/collision handling, unlink behavior, undo/redo,
+      persistence, and renderer/export parity tests.
+
+- [ ] **Non-destructive visible Gemini watermark removal** (deferred by the
+      owner on 2026-07-19 until the active timeline/subtitle phases are
+      complete) — select one or multiple video clips, run a cancellable
+      progress-reporting cleanup job, import each cleaned result as a new
+      media asset, and replace the selected timeline instances in one undoable
+      transaction without altering the original files. Before implementation,
+      finish the remover license, distribution, runtime, and quality-gate
+      review; this feature must not claim to remove invisible SynthID.
+
+- [ ] **Multilingual Whisper acceptance matrix (fixtures + tiny-tier baseline
+      shipped 2026-07-19, `scripts/whisper-accuracy/`)** — real accuracy
+      fixtures now exist for English, Hindi, Marathi, Tamil, Telugu, Gujarati,
+      Bengali, and French, each a real short speech clip + verified transcript
+      (FLEURS/OpenSLR, CC BY / CC BY-SA), with a runnable WER harness. The
+      `ggml-tiny.bin` baseline run found real, actionable failures: Bengali and
+      Telugu hallucinate fluent-but-unrelated text rather than failing loudly;
+      Hindi/Marathi/Gujarati come back as Latin transliteration instead of
+      native script. **Remaining**: re-run against `small-q5_1` (the app's own
+      Recommended tier, not yet tested) before treating any of this as
+      validated either way; code-switching fixtures are explicitly deferred
+      (see the script's README for why a synthetic concatenation would
+      misrepresent real code-switching); performance/timing numbers beyond the
+      raw per-clip transcription time captured incidentally. Transcription in
+      the source language and translation remain separate features; Whisper
+      translation-to-English must not be presented as general
+      language-to-language translation.
 
 - [ ] **Versioning + automatic client updates** (asked 2026-07-17, reaffirmed
       same day: the client must download and apply updates itself when one
@@ -49,6 +78,71 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
 
 ## Done (this session, 2026-07-17)
 
+- **Timeline Engine v2 Phase 5 — Track Model (2026-07-19)** — tracks now
+  persist visibility, mute, and lock with backward-compatible snapshot
+  defaults. State changes use the Phase 4 planner and one-step history;
+  locked tracks reject content/transition edits and disable timeline,
+  inspector, and preview manipulation. Preview, Full render, Fast export,
+  subtitles, and transcription share visibility/mute semantics. Collapse and
+  bounded row height live only in `EditingSession`, with pointer and keyboard
+  controls in aligned timeline headers/lanes. See
+  `docs/timeline-engine-v2-phase-5-track-model.md`. Verified by all 31
+  workspace tasks and 573 TypeScript tests, including 116 timeline, 44 shared,
+  and 277 desktop tests.
+
+- **Video clip audio controls wired to preview and Full export (2026-07-19)** —
+  the inspector, timeline planner/document, persistence, undo, and Fast FFmpeg
+  export were already connected, but Remotion applied the computed
+  volume/mute/fade callback only to audio-only clips. `OffthreadVideo` now uses
+  the same frame-aware volume callback, so video clip volume, mute, fade-in,
+  and fade-out behave consistently in desktop preview and composited export.
+  A renderer regression test covers base volume, both fades, and mute.
+  Verification passes all 31 workspace tasks and 545 TypeScript tests,
+  including 33 renderer tests.
+
+- **Timeline Engine v2 Phase 4 — Edit Planner (2026-07-19)** — added the
+  framework-free `TimelineEditIntent` and `planTimelineEdit` boundary for every
+  currently supported track, clip, transition, animation and audio edit.
+  Planning reuses the existing pure operations, deterministic ID providers,
+  validation and transaction history; no parallel command system was added.
+  The desktop project store keeps its public API but all mutations now follow
+  intent → planner → validated transaction → history. Six planner contract
+  tests raise timeline coverage to 109 tests. See
+  `docs/timeline-engine-v2-phase-4-edit-planner.md`.
+
+- **Saved-project deletion repaired (2026-07-19)** — the Projects panel no
+  longer disables Delete for the open snapshot. Deletion remains an explicit
+  two-step action; after storage confirms an active-project delete, editor,
+  timeline and subtitle state move to a fresh blank project so autosave cannot
+  recreate the deleted identity. A failed delete preserves the open project
+  unchanged, while inactive deletion leaves the active project alone. Covered
+  at the application-command and rendered Projects-panel boundaries; the full
+  27-task workspace gate passes with 252 desktop tests.
+
+- **Subtitle timeline multi-selection and Text styles (2026-07-19)** — subtitle
+  cues now use the shared `SelectionSet` model: click replaces selection,
+  Ctrl/Cmd+click toggles, and Shift+click extends across the ordered subtitle
+  lane. Bulk delete and selected/all style application are single subtitle
+  history transactions, preserving one-step undo/redo. The former Templates
+  panel is now Text styles, with resolved visual previews, selection counts,
+  Select all, Set as default, Apply to selected, and Apply to all. Verified by
+  the complete 27-task workspace gate, 103 timeline tests, 249 desktop tests,
+  repository-wide formatting, and browser interaction QA.
+
+- **Release-bundling gap closed (2026-07-19)** — an installed VideoDip build
+  previously had no bundled Node, render CLI, or Chromium, so composited
+  export silently fell back to FFmpeg cuts-only. New
+  `scripts/provision-node-runtime.ps1` and `scripts/stage-render-resources.ps1`
+  produce a pinned, checksum-verified Node sidecar and a portable, pruned
+  `@videodip/renderer` plus pre-downloaded Chrome Headless Shell, wired into
+  `tauri.release.conf.json`. Also fixed a real bug in `render.rs`: the render
+  sidecar's working directory was never set, so Remotion's Chrome-cache
+  resolution (which walks up from `cwd`) was inheriting an unrelated
+  directory. Verified by actually running both scripts — the first attempt
+  produced absolute symlinks into this machine's own path, caught by
+  inspection and fixed with `--config.node-linker=hoisted`. See ADR-0011's
+  addendum. Not yet verified: a real `tauri build` installer end to end.
+
 - **Media grid/list, source audition and Instagram guides (2026-07-19)** —
   added square, resolution-independent grid cards plus compact list rows with
   accessible view switching. Every item exposes Play immediately before Add;
@@ -58,6 +152,14 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
   audition state remain outside persistence and undo. Browser QA also found and
   fixed an unstable multi-selection array selector that prevented the live
   timeline from mounting.
+
+- **Balanced, discoverable workspace resizing (2026-07-19)** — standard video
+  editing now opens at 30% library / 40% preview / 30% inspector. Persistent
+  divider lines and grips make resizing visible, and short-video now exposes
+  both its library and portrait-stage resize boundaries. Its inspector fills
+  the complete center pane instead of leaving a fixed-width dead strip. Grid
+  media uses an explicit square crop container, so source aspect ratio cannot
+  change card geometry.
 
 - **About and license dialog (2026-07-19)** — added an accessible Help →
   About us dialog with the VideoDip version, developer Shantanu Udasi, plain

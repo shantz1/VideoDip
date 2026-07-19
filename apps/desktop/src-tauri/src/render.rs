@@ -10,7 +10,7 @@
 use crate::artifact::{validate_task_id, MediaProcessRegistry};
 use serde::Serialize;
 use std::io::{BufRead, BufReader, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
@@ -137,6 +137,9 @@ fn run_render_process(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(package_root) = cli_package_root(cli) {
+        command.current_dir(package_root);
+    }
 
     #[cfg(windows)]
     {
@@ -263,8 +266,11 @@ fn node_path() -> Option<PathBuf> {
     which_on_path(name)
 }
 
-/// Locates the built render CLI: explicit override, bundled resource next to
-/// the executable, then the monorepo build output on development machines.
+/// Locates the built render CLI: explicit override, the bundled release
+/// resource (`resources/render/dist/render-cli.js`, staged by
+/// `pnpm render:stage:release:windows` and mapped beside the executable by
+/// `tauri.release.conf.json`), then the monorepo build output on development
+/// machines.
 fn cli_path() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("VIDEODIP_RENDER_CLI")
         .map(PathBuf::from)
@@ -272,12 +278,13 @@ fn cli_path() -> Option<PathBuf> {
     {
         return Some(path);
     }
-    if let Some(path) = std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(|parent| parent.join("render-cli.js")))
-        .filter(|path| path.is_file())
-    {
-        return Some(path);
+    if let Some(path) = std::env::current_exe().ok().and_then(|path| {
+        path.parent()
+            .map(|parent| parent.join("render").join("dist").join("render-cli.js"))
+    }) {
+        if path.is_file() {
+            return Some(path);
+        }
     }
     #[cfg(debug_assertions)]
     {
@@ -288,6 +295,23 @@ fn cli_path() -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// The render CLI's package root (`.../dist/render-cli.js` -> `...`) — both
+/// the bundled release resource and the monorepo `apps/renderer` build
+/// output share this `dist/render-cli.js` layout, and both have their own
+/// `package.json` at this level.
+///
+/// Used as the spawned process's working directory: `@remotion/renderer`
+/// resolves its Chrome Headless Shell cache by walking up from `cwd` to the
+/// nearest `package.json` and looking under `<that dir>/node_modules/.remotion`
+/// (see `get-download-destination.js` upstream). Leaving `cwd` unset inherits
+/// whatever directory Tauri happened to launch from, which has no
+/// relationship to where the render runtime — and its pre-downloaded browser
+/// cache — actually live, so the browser would silently fail to resolve (or
+/// resolve to the wrong, unprovisioned location) in a release build.
+fn cli_package_root(cli: &PathBuf) -> Option<PathBuf> {
+    cli.parent()?.parent().map(Path::to_path_buf)
 }
 
 /// Minimal PATH lookup; avoids adding a `which` dependency for one probe.

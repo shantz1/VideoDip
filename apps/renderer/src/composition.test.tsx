@@ -3,6 +3,10 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockFrame = vi.hoisted(() => ({ current: 0 }));
+const mockMediaVolume = vi.hoisted(() => ({
+  audio: null as ((frame: number) => number) | null,
+  video: null as ((frame: number) => number) | null,
+}));
 
 vi.mock('remotion', () => ({
   AbsoluteFill: ({ children, style }: { children: ReactNode; style?: unknown }) => (
@@ -11,15 +15,29 @@ vi.mock('remotion', () => ({
   Sequence: ({ children, durationInFrames }: { children: ReactNode; durationInFrames: number }) => (
     <section data-duration={durationInFrames}>{children}</section>
   ),
-  Audio: ({ src }: { src: string }) => <span data-media="audio" data-src={src} />,
-  OffthreadVideo: ({ src, style }: { src: string; style?: unknown }) => (
-    <span data-media="video" data-src={src} data-style={JSON.stringify(style)} />
-  ),
+  Audio: ({ src, volume }: { src: string; volume?: (frame: number) => number }) => {
+    mockMediaVolume.audio = volume ?? null;
+    return <span data-media="audio" data-src={src} />;
+  },
+  OffthreadVideo: ({
+    src,
+    style,
+    volume,
+  }: {
+    src: string;
+    style?: unknown;
+    volume?: (frame: number) => number;
+  }) => {
+    mockMediaVolume.video = volume ?? null;
+    return <span data-media="video" data-src={src} data-style={JSON.stringify(style)} />;
+  },
   useCurrentFrame: () => mockFrame.current,
 }));
 
 beforeEach(() => {
   mockFrame.current = 0;
+  mockMediaVolume.audio = null;
+  mockMediaVolume.video = null;
 });
 
 import {
@@ -179,6 +197,36 @@ describe('VideoDip composition contract', () => {
     ).toBe(true);
   });
 
+  it('applies volume, fades, and mute to video clip audio', () => {
+    renderToStaticMarkup(
+      <VideoDipComposition
+        clips={[
+          clip({
+            durationInFrames: 30,
+            audio: { volume: 0.5, isMuted: false, fadeInFrames: 10, fadeOutFrames: 10 },
+          }),
+        ]}
+        subtitles={[]}
+        settings={SETTINGS}
+      />,
+    );
+
+    expect(mockMediaVolume.video).not.toBeNull();
+    expect(mockMediaVolume.video?.(0)).toBe(0);
+    expect(mockMediaVolume.video?.(5)).toBe(0.25);
+    expect(mockMediaVolume.video?.(15)).toBe(0.5);
+    expect(mockMediaVolume.video?.(25)).toBe(0.25);
+
+    renderToStaticMarkup(
+      <VideoDipComposition
+        clips={[clip({ audio: { ...clip().audio, isMuted: true } })]}
+        subtitles={[]}
+        settings={SETTINGS}
+      />,
+    );
+    expect(mockMediaVolume.video?.(10)).toBe(0);
+  });
+
   it('extends the outgoing sequence and fades the incoming clip at a transition cut', () => {
     const transition = {
       id: 'transition-a',
@@ -263,6 +311,47 @@ describe('VideoDip composition contract', () => {
       />,
     );
     expect(downMarkup).toContain('&quot;clipPath&quot;:&quot;inset(100% 0 0 0)&quot;');
+  });
+
+  it('masks the incoming clip with a growing circle for circle-open', () => {
+    const transition = { id: 't', kind: 'circle-open', durationInFrames: 15, parameters: {} };
+    const markup = renderToStaticMarkup(
+      <VideoDipComposition
+        clips={[clip({ id: 'incoming', transitionIn: transition })]}
+        subtitles={[]}
+        settings={SETTINGS}
+      />,
+    );
+    expect(markup).toContain('&quot;clipPath&quot;:&quot;circle(0% at 50% 50%)&quot;');
+  });
+
+  it('masks the incoming clip with a growing diagonal for diagonal-top-left and diagonal-bottom-right', () => {
+    const topLeft = { id: 't', kind: 'diagonal-top-left', durationInFrames: 15, parameters: {} };
+    const topLeftMarkup = renderToStaticMarkup(
+      <VideoDipComposition
+        clips={[clip({ id: 'incoming', transitionIn: topLeft })]}
+        subtitles={[]}
+        settings={SETTINGS}
+      />,
+    );
+    expect(topLeftMarkup).toContain('&quot;clipPath&quot;:&quot;polygon(0 0, 0% 0, 0 0%)&quot;');
+
+    const bottomRight = {
+      id: 't',
+      kind: 'diagonal-bottom-right',
+      durationInFrames: 15,
+      parameters: {},
+    };
+    const bottomRightMarkup = renderToStaticMarkup(
+      <VideoDipComposition
+        clips={[clip({ id: 'incoming', transitionIn: bottomRight })]}
+        subtitles={[]}
+        settings={SETTINGS}
+      />,
+    );
+    expect(bottomRightMarkup).toContain(
+      '&quot;clipPath&quot;:&quot;polygon(100% 100%, 100% 100%, 100% 100%)&quot;',
+    );
   });
 
   it('scales the incoming clip for zoom-in while still crossfading', () => {

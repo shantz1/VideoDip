@@ -7,6 +7,7 @@ import {
   getSelectedSubtitleSegmentId,
   getSelectedTransitionId,
   getSessionSelectedClipIds,
+  getSessionSelectedSubtitleSegmentIds,
 } from '@videodip/timeline';
 import { useMemo } from 'react';
 import { CommandPalette, useShortcuts, type Shortcut } from '../../shortcuts/index';
@@ -85,6 +86,7 @@ function EditorShellContent() {
   const canRedo = useProjectStore((s) => s.future.length > 0);
   const selectedSubtitleId = useSessionStore((s) => getSelectedSubtitleSegmentId(s.session));
   const removeSubtitle = useSubtitleStore((state) => state.remove);
+  const removeSubtitles = useSubtitleStore((state) => state.removeMany);
   const subtitleCanUndo = useSubtitleStore((state) => state.past.length > 0);
   const subtitleCanRedo = useSubtitleStore((state) => state.future.length > 0);
 
@@ -143,7 +145,7 @@ function EditorShellContent() {
       },
       {
         id: 'edit.deleteClip',
-        label: 'Delete selected clip',
+        label: 'Delete selected timeline items',
         scope: 'timeline',
         combo: { key: 'delete' },
         disabled:
@@ -160,7 +162,12 @@ function EditorShellContent() {
             removeTransition(selectedTransitionId);
             clearSelection();
           } else if (selectedSubtitleId) {
-            removeSubtitle(selectedSubtitleId);
+            const selectedSubtitleIds = getSessionSelectedSubtitleSegmentIds(
+              useSessionStore.getState().session,
+            );
+            if (selectedSubtitleIds.length > 1) removeSubtitles(selectedSubtitleIds);
+            else removeSubtitle(selectedSubtitleId);
+            clearSelection();
           }
         },
       },
@@ -310,11 +317,13 @@ function EditorShellContent() {
       undo,
       redo,
       removeClip,
+      removeClips,
       removeTransition,
       canUndo,
       canRedo,
       selectedSubtitleId,
       removeSubtitle,
+      removeSubtitles,
       subtitleCanUndo,
       subtitleCanRedo,
       projectArchives,
@@ -365,7 +374,7 @@ function EditorShellContent() {
           <PreviewCanvas />
         </div>
         <div className="relative min-h-0 min-w-0" style={{ gridArea: 'inspector' }}>
-          <RightInspector fillAvailableWidth={workspaceLayout === 'video'} />
+          <RightInspector fillAvailableWidth />
           {workspaceLayout === 'video' && !isInspectorCollapsed && (
             <WorkspacePaneSplitter pane="inspector" />
           )}

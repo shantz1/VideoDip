@@ -57,14 +57,17 @@ export function ClipPreviewOverlay() {
   });
   const [error, setError] = useState<string | null>(null);
 
-  const clip = selectedClipId
-    ? document.tracks
-        .flatMap((track) => track.clips)
-        .find((candidate) => candidate.id === selectedClipId)
+  const track = selectedClipId
+    ? document.tracks.find((candidate) =>
+        candidate.clips.some((clip) => clip.id === selectedClipId),
+      )
     : undefined;
+  const clip = track?.clips.find((candidate) => candidate.id === selectedClipId);
   const media = clip ? mediaItems.find((item) => item.id === clip.assetId) : undefined;
   const isVisible =
     clip !== undefined &&
+    track?.isVisible === true &&
+    track.isLocked === false &&
     clip.isEnabled &&
     playhead >= clip.start &&
     playhead < clip.start + clip.duration;

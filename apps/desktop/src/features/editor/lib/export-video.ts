@@ -74,7 +74,7 @@ export function toExportClips(
   resolvePath: (assetId: AssetId) => string | undefined,
 ): Result<readonly ExportClip[]> {
   const videoTrack = document.tracks.find((track) => track.kind === 'video');
-  const clips = [...(videoTrack?.clips ?? [])]
+  const clips = [...(videoTrack?.isVisible === false ? [] : (videoTrack?.clips ?? []))]
     .filter((clip) => clip.isEnabled)
     .sort((a, b) => a.start - b.start);
 
@@ -98,7 +98,7 @@ export function toExportClips(
       opacity: clip.opacity,
       blendMode: clip.blendMode,
       animation: clip.animation,
-      audio: clip.audio,
+      audio: { ...clip.audio, isMuted: videoTrack?.isMuted === true || clip.audio.isMuted },
       transitionToNext: (() => {
         const next = clips[index + 1];
         const transition = next
