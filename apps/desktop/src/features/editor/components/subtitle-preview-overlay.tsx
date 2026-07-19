@@ -1,11 +1,13 @@
 'use client';
 
 import { resolveSubtitleStyle } from '@videodip/subtitle-engine';
+import { getSelectedSubtitleSegmentId } from '@videodip/timeline';
 import { cn } from '@videodip/ui';
 import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useEditorStore } from '../editor.store';
 import { COMPOSITION_SIZE } from '../lib/composition-size';
 import { moveSubtitlePosition } from '../lib/subtitle-preview-position';
+import { useSessionStore } from '../session.store';
 import { useSubtitleStore } from '../subtitle.store';
 
 interface DragState {
@@ -25,11 +27,11 @@ export function SubtitlePreviewOverlay() {
   const previewStyle = useSubtitleStore((state) => state.previewStyle);
   const commitStylePreview = useSubtitleStore((state) => state.commitStylePreview);
   const cancelStylePreview = useSubtitleStore((state) => state.cancelStylePreview);
-  const selectedId = useEditorStore((state) => state.selectedSubtitleId);
-  const selectSubtitle = useEditorStore((state) => state.selectSubtitle);
+  const selectedId = useSessionStore((state) => getSelectedSubtitleSegmentId(state.session));
+  const selectSubtitle = useSubtitleStore((state) => state.select);
   const setInspectorTab = useEditorStore((state) => state.setInspectorTab);
   const playhead = useEditorStore((state) => state.playhead);
-  const isSnapEnabled = useEditorStore((state) => state.snapEnabled);
+  const isSnapEnabled = useSessionStore((state) => state.session.viewport.isSnappingEnabled);
   const aspectRatio = useEditorStore((state) => state.aspectRatio);
   const [guides, setGuides] = useState<{ vertical: number | null; horizontal: number | null }>({
     vertical: null,

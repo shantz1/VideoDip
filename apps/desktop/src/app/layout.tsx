@@ -2,6 +2,10 @@ import { ThemeProvider, themeInitScript } from '@videodip/ui';
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import './globals.css';
+// Same @font-face declarations the Remotion composition imports for preview
+// and export — imported here too so the subtitle font picker's own DOM
+// (outside the Remotion tree) previews cues in the actual chosen font.
+import '@videodip/renderer/caption-fonts.css';
 
 export const metadata: Metadata = {
   title: 'VideoDip',

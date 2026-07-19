@@ -1,10 +1,19 @@
 'use client';
 
 import { ms, type Milliseconds } from '@videodip/shared';
-import { getDuration, type Clip, type ClipTransition, type TrimEdge } from '@videodip/timeline';
+import {
+  getDuration,
+  getSelectedClipId,
+  getSelectedSubtitleSegmentId,
+  getSelectedTransitionId,
+  type Clip,
+  type ClipTransition,
+  type TimelineSelectionRef,
+  type TrimEdge,
+} from '@videodip/timeline';
 import { Button, cn } from '@videodip/ui';
 import { Magnet, Maximize2, Plus, Scissors, Sparkles, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
 import { useEditorStore } from '../editor.store';
 import {
   calculateAnchoredScrollLeft,
@@ -15,6 +24,7 @@ import {
 import { formatTimecode } from '../lib/timecode';
 import { snapTimelineTime } from '../lib/timeline-snap';
 import { useProjectStore } from '../project.store';
+import { useSessionStore } from '../session.store';
 import { useSubtitleStore } from '../subtitle.store';
 
 const TRACK_HEIGHT = 44;
@@ -57,22 +67,31 @@ export function TimelinePanel() {
 }
 
 function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
-  const zoom = useEditorStore((s) => s.zoom);
-  const snapEnabled = useEditorStore((s) => s.snapEnabled);
-  const zoomIn = useEditorStore((s) => s.zoomIn);
-  const zoomOut = useEditorStore((s) => s.zoomOut);
-  const setZoom = useEditorStore((s) => s.setZoom);
-  const toggleSnap = useEditorStore((s) => s.toggleSnap);
-  const selectedClipId = useEditorStore((s) => s.selectedClipId);
-  const selectedTransitionId = useEditorStore((s) => s.selectedTransitionId);
-  const selectClip = useEditorStore((s) => s.selectClip);
-  const selectTransition = useEditorStore((s) => s.selectTransition);
+  const zoom = useSessionStore((s) => s.session.viewport.zoom);
+  const snapEnabled = useSessionStore((s) => s.session.viewport.isSnappingEnabled);
+  const zoomIn = useSessionStore((s) => s.zoomIn);
+  const zoomOut = useSessionStore((s) => s.zoomOut);
+  const setZoom = useSessionStore((s) => s.setZoom);
+  const toggleSnap = useSessionStore((s) => s.toggleSnapping);
+  const selectedClipId = useSessionStore((s) => getSelectedClipId(s.session));
+  // Subscribe to the stable selection reference, then derive arrays locally.
+  // Returning `filter().map()` directly from a Zustand selector manufactures
+  // a fresh external-store snapshot on every read and React rejects it as an
+  // infinite update source in the browser.
+  const selectionRefs = useSessionStore((s) => s.session.selection.refs);
+  const selectedClipIds = useMemo(
+    () => selectionRefs.filter((ref) => ref.type === 'clip').map((ref) => ref.id),
+    [selectionRefs],
+  );
+  const selectedTransitionId = useSessionStore((s) => getSelectedTransitionId(s.session));
+  const clearSelection = useSessionStore((s) => s.clearSelection);
   const playhead = useEditorStore((s) => s.playhead);
   const document = useProjectStore((s) => s.document);
   const removeClip = useProjectStore((s) => s.removeClip);
+  const removeClips = useProjectStore((s) => s.removeClips);
   const removeTransition = useProjectStore((s) => s.removeTransition);
   const splitClip = useProjectStore((s) => s.splitClip);
-  const selectedSubtitleId = useEditorStore((state) => state.selectedSubtitleId);
+  const selectedSubtitleId = useSessionStore((s) => getSelectedSubtitleSegmentId(s.session));
   const subtitleDocument = useSubtitleStore((state) => state.document);
   const selectSubtitle = useSubtitleStore((state) => state.select);
   const removeSubtitle = useSubtitleStore((state) => state.remove);
@@ -102,12 +121,15 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
     playhead < selectedSubtitle.end;
 
   const handleDelete = () => {
-    if (selectedClipId) {
+    if (selectedClipIds.length > 1) {
+      removeClips(selectedClipIds);
+      clearSelection();
+    } else if (selectedClipId) {
       removeClip(selectedClipId);
-      selectClip(null);
+      clearSelection();
     } else if (selectedTransitionId) {
       removeTransition(selectedTransitionId);
-      selectTransition(null);
+      clearSelection();
     } else if (selectedSubtitleId) {
       removeSubtitle(selectedSubtitleId);
       selectSubtitle(null);
@@ -116,7 +138,7 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
 
   const handleSplit = () => {
     if (selectedClipId && canSplit) {
-      if (splitClip(selectedClipId, playhead).ok) selectClip(null);
+      if (splitClip(selectedClipId, playhead).ok) clearSelection();
     } else if (selectedSubtitleId && canSplitSubtitle) {
       void splitSubtitle(selectedSubtitleId, playhead);
     }
@@ -135,7 +157,11 @@ function TimelineToolbar({ viewportWidth }: { viewportWidth: number }) {
       <Button
         size="icon-sm"
         variant="ghost"
-        aria-label="Delete selected timeline item"
+        aria-label={
+          selectedClipIds.length > 1
+            ? `Delete ${selectedClipIds.length} selected clips`
+            : 'Delete selected timeline item'
+        }
         disabled={!selectedClipId && !selectedTransitionId && !selectedSubtitleId}
         onClick={handleDelete}
         leadingIcon={<Trash2 />}
@@ -213,16 +239,24 @@ function TrackHeaders() {
 }
 
 function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivElement | null> }) {
-  const zoom = useEditorStore((s) => s.zoom);
-  const zoomIn = useEditorStore((s) => s.zoomIn);
-  const zoomOut = useEditorStore((s) => s.zoomOut);
+  const zoom = useSessionStore((s) => s.session.viewport.zoom);
+  const zoomIn = useSessionStore((s) => s.zoomIn);
+  const zoomOut = useSessionStore((s) => s.zoomOut);
   const playhead = useEditorStore((s) => s.playhead);
   const seek = useEditorStore((s) => s.seek);
   const nudge = useEditorStore((s) => s.nudge);
-  const selectedClipId = useEditorStore((s) => s.selectedClipId);
-  const selectedTransitionId = useEditorStore((s) => s.selectedTransitionId);
-  const selectClip = useEditorStore((s) => s.selectClip);
-  const selectTransition = useEditorStore((s) => s.selectTransition);
+  const selectedClipId = useSessionStore((s) => getSelectedClipId(s.session));
+  const selectionRefs = useSessionStore((s) => s.session.selection.refs);
+  const selectedTransitionId = useSessionStore((s) => getSelectedTransitionId(s.session));
+  const select = useSessionStore((s) => s.select);
+  const toggleSelect = useSessionStore((s) => s.toggleSelect);
+  const extendSelect = useSessionStore((s) => s.extendSelect);
+  const clearSelection = useSessionStore((s) => s.clearSelection);
+  const selectedClipIdSet = useMemo(
+    () =>
+      new Set(selectionRefs.filter((ref) => ref.type === 'clip').map((ref) => ref.id as string)),
+    [selectionRefs],
+  );
   const mediaItems = useEditorStore((s) => s.mediaItems);
   const projectDocument = useProjectStore((s) => s.document);
   const moveClip = useProjectStore((s) => s.moveClip);
@@ -230,11 +264,11 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
   const splitClip = useProjectStore((s) => s.splitClip);
   const addTransition = useProjectStore((s) => s.addTransition);
   const subtitleDocument = useSubtitleStore((state) => state.document);
-  const selectedSubtitleId = useEditorStore((state) => state.selectedSubtitleId);
+  const selectedSubtitleId = useSessionStore((s) => getSelectedSubtitleSegmentId(s.session));
   const selectSubtitle = useSubtitleStore((state) => state.select);
   const splitSubtitle = useSubtitleStore((state) => state.split);
   const setInspectorTab = useEditorStore((state) => state.setInspectorTab);
-  const snapEnabled = useEditorStore((s) => s.snapEnabled);
+  const snapEnabled = useSessionStore((s) => s.session.viewport.isSnappingEnabled);
   const [editError, setEditError] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
@@ -247,10 +281,10 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
       event.preventDefault();
 
       const pointerX = event.clientX - viewport.getBoundingClientRect().left;
-      const previousZoom = useEditorStore.getState().zoom;
+      const previousZoom = useSessionStore.getState().session.viewport.zoom;
       if (event.deltaY < 0) zoomIn();
       else zoomOut();
-      const nextZoom = useEditorStore.getState().zoom;
+      const nextZoom = useSessionStore.getState().session.viewport.zoom;
       viewport.scrollLeft = calculateAnchoredScrollLeft(
         viewport.scrollLeft,
         pointerX,
@@ -284,7 +318,7 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
     if (selectedClipId && canSplitAtPlayhead) {
       const result = splitClip(selectedClipId, playhead);
       setEditError(result.ok ? null : result.error.recovery);
-      if (result.ok) selectClip(null);
+      if (result.ok) clearSelection();
     } else if (selectedSubtitleId && canSplitSubtitleAtPlayhead) {
       const result = splitSubtitle(selectedSubtitleId, playhead);
       setEditError(result.ok ? null : result.error.recovery);
@@ -375,8 +409,25 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
                   zoom={zoom}
                   snapEnabled={snapEnabled}
                   snapTargets={snapTargetsFor(clip)}
-                  selected={clip.id === selectedClipId}
-                  onSelect={() => selectClip(clip.id)}
+                  selected={selectedClipIdSet.has(clip.id)}
+                  onSelect={(event) => {
+                    const ref: TimelineSelectionRef = { type: 'clip', id: clip.id };
+                    if (event.shiftKey) {
+                      extendSelect(
+                        ref,
+                        orderedClips.map(
+                          (candidate): TimelineSelectionRef => ({
+                            type: 'clip',
+                            id: candidate.id,
+                          }),
+                        ),
+                      );
+                    } else if (event.metaKey || event.ctrlKey) {
+                      toggleSelect(ref);
+                    } else {
+                      select(ref);
+                    }
+                  }}
                   onMove={(newStart) => {
                     const result = moveClip(clip.id, newStart);
                     setEditError(result.ok ? null : result.error.recovery);
@@ -406,8 +457,7 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
                     selected={transition?.id === selectedTransitionId}
                     onActivate={() => {
                       if (transition) {
-                        selectTransition(transition.id);
-                        selectSubtitle(null);
+                        select({ type: 'transition', id: transition.id });
                         setInspectorTab('effects');
                         return;
                       }
@@ -425,8 +475,7 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
                           )
                         : undefined;
                       if (added) {
-                        selectTransition(added.id);
-                        selectSubtitle(null);
+                        select({ type: 'transition', id: added.id });
                         setInspectorTab('effects');
                       }
                     }}
@@ -443,7 +492,6 @@ function TimelineTracks({ viewportRef }: { viewportRef: React.RefObject<HTMLDivE
                     zoom={zoom}
                     selected={segment.id === selectedSubtitleId}
                     onSelect={() => {
-                      selectClip(null);
                       selectSubtitle(segment.id);
                       setInspectorTab('subtitle');
                     }}
@@ -562,7 +610,7 @@ function TimelineClip({
   snapEnabled: boolean;
   snapTargets: readonly Milliseconds[];
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
   onMove: (newStart: Milliseconds) => void;
   onTrim: (edge: TrimEdge, newTime: Milliseconds) => void;
 }) {
@@ -613,7 +661,10 @@ function TimelineClip({
     const mode = edge === 'start' || edge === 'end' ? edge : 'move';
     gesture.current = { mode, startX: event.clientX, hasMoved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
-    onSelect();
+    // Selection itself happens on click (below), not here: a click fires
+    // for both mouse and keyboard (Enter/Space) activation and carries the
+    // modifier keys toggle/range-select need, so it is the single source of
+    // truth for `onSelect` — calling it here too would double-fire it.
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLButtonElement>) => {

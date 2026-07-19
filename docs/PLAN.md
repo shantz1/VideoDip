@@ -49,6 +49,46 @@ phases lives in the root `TRACKER.md`; this file is only the short horizon.
 
 ## Done (this session, 2026-07-17)
 
+- **Media grid/list, source audition and Instagram guides (2026-07-19)** —
+  added square, resolution-independent grid cards plus compact list rows with
+  accessible view switching. Every item exposes Play immediately before Add;
+  Play stops timeline transport and auditions the original video/audio in the
+  center stage without changing the timeline. The stage now has square corners
+  and a visible on/off Instagram 10%-inset safe frame with thirds. View and
+  audition state remain outside persistence and undo. Browser QA also found and
+  fixed an unstable multi-selection array selector that prevented the live
+  timeline from mounting.
+
+- **About and license dialog (2026-07-19)** — added an accessible Help →
+  About us dialog with the VideoDip version, developer Shantanu Udasi, plain
+  `@shantz1` GitHub hyperlink, AGPL-3.0-only notice, complete-license link,
+  focus containment, Escape dismissal, and click-outside dismissal.
+
+- **Resizable 40% timeline pane (2026-07-19)** — the lower timeline now uses
+  40% of the available editor workspace by default and exposes an accessible
+  horizontal splitter for pointer and keyboard resizing. Home or double-click
+  restores the proportional default; pane geometry remains view-only and does
+  not affect project persistence, dirty state, or undo history.
+
+- **Direct video manipulation + color input recursion fix (2026-07-19)** —
+  selected visible video clips now expose source-aspect-correct preview bounds,
+  pointer dragging, uniform corner resizing, center snap guides, cancellation,
+  and focused keyboard nudging. Pointer movement lives in the non-persisted
+  editing session and drives Remotion transiently; release commits one existing
+  `updateClipProperties` timeline transaction. Native subtitle color inputs now
+  guard duplicate browser events, keep one stable native change listener, and
+  skip identical Zustand preview publications, eliminating the maximum-update-
+  depth feedback loop. Verified by the full 27-task workspace gate.
+
+- **Media thumbnail fallback + resizable editor panes (2026-07-18)** — made
+  the Filmora-style center-preview workspace the default, widened the library
+  and inspector defaults, and added pointer/keyboard splitters whose geometry
+  remains view-only and outside undo/autosave. Imported videos now decode an
+  early source frame while the durable FFmpeg thumbnail is loading or when
+  generation fails, instead of degrading immediately to a generic icon and
+  “Preview unavailable.” Covered by source-frame, grid, store and splitter
+  regression tests.
+
 - **Timeline Engine v2 Phase 1 foundation (2026-07-18)** — versioned the
   timeline aggregate with backward-compatible snapshot migration, centralized
   typed document validation, replaced ambient entity ID generation with

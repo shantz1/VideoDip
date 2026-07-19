@@ -1,7 +1,7 @@
 'use client';
 
 import type { ExportPresetId, MediaItem } from '@videodip/media-engine';
-import type { ClipId, Milliseconds, ProjectId, SegmentId, TransitionId } from '@videodip/shared';
+import type { AssetId, Milliseconds, ProjectId } from '@videodip/shared';
 import { ms } from '@videodip/shared';
 import { create } from 'zustand';
 
@@ -15,6 +15,8 @@ import { create } from 'zustand';
  * into the same store as "what the user edited" is how undo ends up restoring
  * panel widths.
  *
+ * Timeline selection and viewport (zoom, snapping) live in `session.store.ts`
+ * — see `docs/timeline-engine-v2-phase-2-editing-session.md`.
  */
 
 /** Left sidebar sections, per the product brief. */
@@ -40,6 +42,9 @@ export type AspectRatio = '9:16' | '3:4' | '4:5' | '1:1' | '16:9';
 /** Filmora-style panel arrangements optimized for wide or vertical editing. */
 export type WorkspaceLayout = 'video' | 'short-video';
 
+/** Visual density for imported media; never persisted into the project. */
+export type MediaLibraryView = 'grid' | 'list';
+
 /** Right inspector tabs. */
 export type InspectorTab =
   | 'properties'
@@ -64,6 +69,18 @@ export interface EditorState {
   readonly inspectorTab: InspectorTab;
   readonly inspectorCollapsed: boolean;
   readonly workspaceLayout: WorkspaceLayout;
+  /** User-dragged source-library width; `null` restores the workspace default. */
+  readonly libraryPaneWidth: number | null;
+  /** User-dragged inspector width; `null` restores the workspace default. */
+  readonly inspectorPaneWidth: number | null;
+  /** User-dragged timeline height; `null` restores the 40% workspace default. */
+  readonly timelinePaneHeight: number | null;
+  /** View-only presentation of imported media cards. */
+  readonly mediaLibraryView: MediaLibraryView;
+  /** Imported source temporarily auditioned instead of the timeline composition. */
+  readonly mediaPreviewAssetId: AssetId | null;
+  /** Instagram-oriented placement guides drawn over the stage. */
+  readonly isInstagramSafeGridEnabled: boolean;
   /**
    * User-dragged width of the short-video stage pane in pixels; `null`
    * means the layout's proportional default. UI state, not project state —
@@ -77,30 +94,11 @@ export interface EditorState {
   /** Real content duration, synchronized from the timeline document. */
   readonly duration: Milliseconds;
 
-  // --- Timeline view ---
-  /** Pixels per second. Drives the ruler and clip widths. */
-  readonly zoom: number;
-  readonly snapEnabled: boolean;
-
   // --- Canvas ---
   /** Drives the preview stage's shape and, eventually, the export frame size. */
   readonly aspectRatio: AspectRatio;
   /** Named output encoding preference; UI-only until export starts. */
   readonly exportPresetId: ExportPresetId;
-
-  // --- Selection ---
-  /**
-   * The clip the timeline toolbar's Split/Delete act on.
-   *
-   * Lives here, not in the project document (`project.store.ts`) — which
-   * clip is selected is a UI concern, not something worth an undo entry of
-   * its own.
-   */
-  readonly selectedClipId: ClipId | null;
-  /** The transition cut currently edited in the Effects inspector. */
-  readonly selectedTransitionId: TransitionId | null;
-  /** The subtitle cue currently edited in the subtitle inspector and stage. */
-  readonly selectedSubtitleId: SegmentId | null;
 
   // --- Project ---
   /** Null until a project is created or loaded. */
@@ -128,6 +126,18 @@ export interface EditorState {
   readonly toggleInspector: () => void;
   /** Applies a complete panel arrangement without editing project content. */
   readonly setWorkspaceLayout: (layout: WorkspaceLayout) => void;
+  /** Resizes the source library; clamped, `null` restores the workspace default. */
+  readonly setLibraryPaneWidth: (width: number | null) => void;
+  /** Resizes the inspector; clamped, `null` restores the workspace default. */
+  readonly setInspectorPaneWidth: (width: number | null) => void;
+  /** Resizes the lower timeline; clamped, `null` restores its default. */
+  readonly setTimelinePaneHeight: (height: number | null) => void;
+  /** Switches the imported-media presentation without editing project content. */
+  readonly setMediaLibraryView: (view: MediaLibraryView) => void;
+  /** Auditions an imported source and stops timeline playback; `null` returns to the timeline. */
+  readonly setMediaPreview: (assetId: AssetId | null) => void;
+  /** Shows or hides the Instagram placement guide without editing project content. */
+  readonly toggleInstagramSafeGrid: () => void;
   /** Resizes the stage pane; clamped, `null` restores the layout default. */
   readonly setStagePaneWidth: (width: number | null) => void;
   readonly play: () => void;
@@ -138,15 +148,8 @@ export interface EditorState {
   readonly nudge: (delta: Milliseconds) => void;
   /** Synchronizes transport bounds after an undoable document edit. */
   readonly setProjectDuration: (duration: Milliseconds) => void;
-  readonly setZoom: (zoom: number) => void;
-  readonly zoomIn: () => void;
-  readonly zoomOut: () => void;
-  readonly toggleSnap: () => void;
   readonly setAspectRatio: (ratio: AspectRatio) => void;
   readonly setExportPreset: (id: ExportPresetId) => void;
-  readonly selectClip: (clipId: ClipId | null) => void;
-  readonly selectTransition: (transitionId: TransitionId | null) => void;
-  readonly selectSubtitle: (segmentId: SegmentId | null) => void;
   readonly addMediaItems: (items: readonly MediaItem[]) => void;
   /** Marks the in-memory project as changed since its last persisted state. */
   readonly markDirty: () => void;
@@ -168,12 +171,6 @@ export interface EditorState {
 
 const UNTITLED_PROJECT_PATTERN = /^Untitled project(?: (\d+))?$/;
 
-/** Zoom bounds in pixels per second. */
-const ZOOM_MIN = 5;
-const ZOOM_MAX = 400;
-const ZOOM_DEFAULT = 50;
-const ZOOM_STEP = 1.3;
-
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 /**
@@ -183,27 +180,32 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 const STAGE_PANE_MIN = 240;
 const STAGE_PANE_MAX = 1280;
 
+/** Side-pane bounds keep controls usable without starving the center preview. */
+const SIDE_PANE_MIN = 240;
+const SIDE_PANE_MAX = 560;
+const TIMELINE_PANE_MIN = 120;
+const TIMELINE_PANE_MAX = 1200;
+
 export const useEditorStore = create<EditorState>()((set, get) => ({
   activePanel: 'media',
   sidebarCollapsed: false,
   inspectorTab: 'properties',
   inspectorCollapsed: false,
-  workspaceLayout: 'short-video',
+  workspaceLayout: 'video',
+  libraryPaneWidth: null,
+  inspectorPaneWidth: null,
+  timelinePaneHeight: null,
+  mediaLibraryView: 'grid',
+  mediaPreviewAssetId: null,
+  isInstagramSafeGridEnabled: false,
   stagePaneWidth: null,
 
   isPlaying: false,
   playhead: ms(0),
   duration: ms(0),
 
-  zoom: ZOOM_DEFAULT,
-  snapEnabled: true,
-
   aspectRatio: '9:16',
   exportPresetId: 'tiktok-vertical',
-
-  selectedClipId: null,
-  selectedTransitionId: null,
-  selectedSubtitleId: null,
 
   projectId: null,
   projectName: null,
@@ -233,6 +235,31 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       sidebarCollapsed: false,
       inspectorCollapsed: false,
     }),
+
+  setLibraryPaneWidth: (width) =>
+    set({
+      libraryPaneWidth:
+        width === null ? null : Math.round(clamp(width, SIDE_PANE_MIN, SIDE_PANE_MAX)),
+    }),
+
+  setInspectorPaneWidth: (width) =>
+    set({
+      inspectorPaneWidth:
+        width === null ? null : Math.round(clamp(width, SIDE_PANE_MIN, SIDE_PANE_MAX)),
+    }),
+
+  setTimelinePaneHeight: (height) =>
+    set({
+      timelinePaneHeight:
+        height === null ? null : Math.round(clamp(height, TIMELINE_PANE_MIN, TIMELINE_PANE_MAX)),
+    }),
+
+  setMediaLibraryView: (mediaLibraryView) => set({ mediaLibraryView }),
+
+  setMediaPreview: (mediaPreviewAssetId) => set({ mediaPreviewAssetId, isPlaying: false }),
+
+  toggleInstagramSafeGrid: () =>
+    set((state) => ({ isInstagramSafeGridEnabled: !state.isInstagramSafeGridEnabled })),
 
   setStagePaneWidth: (width) =>
     set({
@@ -266,15 +293,6 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       isPlaying: duration > 0 && state.playhead < duration ? state.isPlaying : false,
     })),
 
-  setZoom: (zoom) => set({ zoom: clamp(zoom, ZOOM_MIN, ZOOM_MAX) }),
-
-  // Multiplicative steps, not additive: zoom is perceptually logarithmic, so a
-  // fixed +10px/s step feels enormous when zoomed out and useless when in.
-  zoomIn: () => set((state) => ({ zoom: clamp(state.zoom * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX) })),
-  zoomOut: () => set((state) => ({ zoom: clamp(state.zoom / ZOOM_STEP, ZOOM_MIN, ZOOM_MAX) })),
-
-  toggleSnap: () => set((state) => ({ snapEnabled: !state.snapEnabled })),
-
   setAspectRatio: (aspectRatio) =>
     set((state) =>
       state.aspectRatio === aspectRatio
@@ -282,22 +300,6 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
         : { aspectRatio, isDirty: true, editRevision: state.editRevision + 1 },
     ),
   setExportPreset: (exportPresetId) => set({ exportPresetId }),
-
-  selectClip: (selectedClipId) =>
-    set({
-      selectedClipId,
-      ...(selectedClipId === null ? {} : { selectedTransitionId: null, selectedSubtitleId: null }),
-    }),
-  selectTransition: (selectedTransitionId) =>
-    set({
-      selectedTransitionId,
-      ...(selectedTransitionId === null ? {} : { selectedClipId: null, selectedSubtitleId: null }),
-    }),
-  selectSubtitle: (selectedSubtitleId) =>
-    set({
-      selectedSubtitleId,
-      ...(selectedSubtitleId === null ? {} : { selectedClipId: null, selectedTransitionId: null }),
-    }),
 
   addMediaItems: (items) => {
     if (items.length === 0) return;
@@ -333,10 +335,8 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       projectCreatedAt: projectIdentity.createdAt,
       isDirty: true,
       editRevision: state.editRevision + 1,
-      selectedClipId: null,
-      selectedTransitionId: null,
-      selectedSubtitleId: null,
       mediaItems: [],
+      mediaPreviewAssetId: null,
     }));
   },
 
@@ -347,9 +347,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       projectCreatedAt: project.createdAt,
       aspectRatio: project.aspectRatio,
       mediaItems: project.mediaItems,
-      selectedClipId: null,
-      selectedTransitionId: null,
-      selectedSubtitleId: null,
+      mediaPreviewAssetId: null,
       isPlaying: false,
       playhead: ms(0),
       isDirty: false,

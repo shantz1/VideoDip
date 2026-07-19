@@ -57,10 +57,16 @@ export const DEFAULT_CLIP_AUDIO: ClipAudioSettings = {
 export const CORE_TRANSITION_KINDS: readonly CoreTransitionKind[] = [
   'crossfade',
   'dip-to-black',
+  'dip-to-white',
   'slide-left',
   'slide-right',
+  'slide-up',
+  'slide-down',
   'wipe-left',
   'wipe-right',
+  'wipe-up',
+  'wipe-down',
+  'zoom-in',
 ];
 
 /** Creates a timeline from consumer-chosen tracks and transition relations. */

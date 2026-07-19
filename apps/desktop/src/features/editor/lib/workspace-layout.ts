@@ -8,6 +8,29 @@ export interface WorkspaceGrid {
   readonly columns: string;
 }
 
+/** User-controlled pane geometry consumed by the workspace grid. */
+export interface WorkspacePaneGeometry {
+  readonly libraryPaneWidth?: number | null;
+  readonly inspectorPaneWidth?: number | null;
+  readonly stagePaneWidth?: number | null;
+  readonly isLibraryCollapsed?: boolean;
+  readonly isInspectorCollapsed?: boolean;
+}
+
+/** Pixel fallbacks used by keyboard resizing and the short-video workspace. */
+export const DEFAULT_LIBRARY_PANE_WIDTH = 320;
+export const DEFAULT_INSPECTOR_PANE_WIDTH = 320;
+
+/** Standard editing starts at a deliberate 30 / 40 / 30 workspace balance. */
+const DEFAULT_VIDEO_LIBRARY_COLUMN = 'minmax(240px, 30%)';
+const DEFAULT_VIDEO_PREVIEW_COLUMN = 'minmax(320px, 40%)';
+const DEFAULT_VIDEO_INSPECTOR_COLUMN = 'minmax(240px, 30%)';
+
+/** Grid rows with a 40% default timeline or an explicit dragged pixel height. */
+export function workspaceTimelineRows(timelinePaneHeight: number | null): string {
+  return `minmax(0, 1fr) ${timelinePaneHeight === null ? '40%' : `${timelinePaneHeight}px`}`;
+}
+
 /**
  * Maps a workspace preset to a CSS grid.
  *
@@ -18,26 +41,48 @@ export interface WorkspaceGrid {
  * editing keeps the classic arrangement: center preview, right inspector,
  * and the complete lower row for long horizontal sequences.
  *
- * Both side panels size themselves (fixed rails that collapse to nothing),
- * so their tracks are `auto`. The flexible track always lies inside the
- * timeline's span — collapsing a panel must widen the timeline, never
- * shrink it. The short-video stage is viewport-proportioned rather than
- * `1fr`: a full-height 9:16 frame only ever needs ~⅓ of the window width,
- * and every pixel past that is better spent on the timeline.
+ * Standard video uses explicit user-resizable side columns around a flexible
+ * center preview. Collapsing a panel widens the preview and timeline instead
+ * of leaving a dead grid track. Short-video keeps its viewport-proportioned
+ * stage because a full-height 9:16 frame only needs roughly one third of the
+ * window width; its existing stage splitter owns that geometry.
  */
 export function workspaceGridTemplate(
   layout: WorkspaceLayout,
-  stagePaneWidth: number | null = null,
+  geometry: WorkspacePaneGeometry = {},
 ): WorkspaceGrid {
-  return layout === 'short-video'
-    ? {
-        areas: '"library inspector preview" "timeline timeline preview"',
-        columns: `auto minmax(0, 1fr) minmax(0, ${
-          stagePaneWidth === null ? '34vw' : `${stagePaneWidth}px`
-        })`,
-      }
-    : {
-        areas: '"library preview inspector" "timeline timeline timeline"',
-        columns: 'auto minmax(0, 1fr) auto',
-      };
+  if (layout === 'short-video') {
+    const libraryColumn = geometry.isLibraryCollapsed
+      ? 'auto'
+      : `${geometry.libraryPaneWidth ?? DEFAULT_LIBRARY_PANE_WIDTH}px`;
+    return {
+      areas: '"library inspector preview" "timeline timeline preview"',
+      columns: `${libraryColumn} minmax(0, 1fr) minmax(0, ${
+        geometry.stagePaneWidth == null ? '34vw' : `${geometry.stagePaneWidth}px`
+      })`,
+    };
+  }
+
+  const libraryColumn = geometry.isLibraryCollapsed
+    ? 'auto'
+    : geometry.libraryPaneWidth === null || geometry.libraryPaneWidth === undefined
+      ? DEFAULT_VIDEO_LIBRARY_COLUMN
+      : `${geometry.libraryPaneWidth}px`;
+  const inspectorColumn = geometry.isInspectorCollapsed
+    ? '0px'
+    : geometry.inspectorPaneWidth === null || geometry.inspectorPaneWidth === undefined
+      ? DEFAULT_VIDEO_INSPECTOR_COLUMN
+      : `${geometry.inspectorPaneWidth}px`;
+  const previewColumn =
+    geometry.libraryPaneWidth == null &&
+    geometry.inspectorPaneWidth == null &&
+    !geometry.isLibraryCollapsed &&
+    !geometry.isInspectorCollapsed
+      ? DEFAULT_VIDEO_PREVIEW_COLUMN
+      : 'minmax(0, 1fr)';
+
+  return {
+    areas: '"library preview inspector" "timeline timeline timeline"',
+    columns: `${libraryColumn} ${previewColumn} ${inspectorColumn}`,
+  };
 }

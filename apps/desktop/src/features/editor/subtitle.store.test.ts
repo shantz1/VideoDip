@@ -1,14 +1,17 @@
 import { ms, type SegmentId } from '@videodip/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useEditorStore } from './editor.store';
+import { useSessionStore } from './session.store';
 import { useSubtitleStore } from './subtitle.store';
 
 const initial = useSubtitleStore.getState();
 const initialEditor = useEditorStore.getState();
+const initialSession = useSessionStore.getState();
 
 beforeEach(() => {
   useSubtitleStore.setState(initial, true);
   useEditorStore.setState(initialEditor, true);
+  useSessionStore.setState(initialSession, true);
 });
 
 describe('subtitle store', () => {
@@ -67,14 +70,26 @@ describe('subtitle store', () => {
     expect(useSubtitleStore.getState().document.segments[0]?.style.foreground).toBeUndefined();
   });
 
-  it('selects subtitles exclusively through the editor selection state', () => {
-    useEditorStore.getState().selectClip('clip-a' as never);
+  it('does not publish duplicate style preview values', () => {
+    let notifications = 0;
+    const unsubscribe = useSubtitleStore.subscribe(() => {
+      notifications += 1;
+    });
+
+    useSubtitleStore.getState().previewStyle('styled' as SegmentId, { foreground: '#112233' });
+    useSubtitleStore.getState().previewStyle('styled' as SegmentId, { foreground: '#112233' });
+    unsubscribe();
+
+    expect(notifications).toBe(1);
+  });
+
+  it('selects subtitles exclusively through the shared editing session', () => {
+    useSessionStore.getState().select({ type: 'clip', id: 'clip-a' as never });
     useSubtitleStore.getState().select('cue-a' as SegmentId);
 
-    expect(useEditorStore.getState()).toMatchObject({
-      selectedClipId: null,
-      selectedTransitionId: null,
-      selectedSubtitleId: 'cue-a',
+    expect(useSessionStore.getState().session.selection.primary).toEqual({
+      type: 'subtitle-segment',
+      id: 'cue-a',
     });
   });
 });

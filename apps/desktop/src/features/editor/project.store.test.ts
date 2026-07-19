@@ -1,11 +1,15 @@
 import { ms, normalized, type AssetId } from '@videodip/shared';
+import { getSelectedClipId, getSelectedTransitionId } from '@videodip/timeline';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useEditorStore } from './editor.store';
 import { useProjectStore } from './project.store';
+import { useSessionStore } from './session.store';
 
 const initial = useProjectStore.getState();
 const initialEditor = useEditorStore.getState();
+const initialSession = useSessionStore.getState();
 const state = () => useProjectStore.getState();
+const session = () => useSessionStore.getState();
 const ASSET = 'asset-a' as AssetId;
 const VIDEO = 'video' as never;
 const videoClips = () => state().document.tracks.find((track) => track.kind === 'video')?.clips;
@@ -13,6 +17,7 @@ const videoClips = () => state().document.tracks.find((track) => track.kind === 
 beforeEach(() => {
   useProjectStore.setState(initial, true);
   useEditorStore.setState(initialEditor, true);
+  useSessionStore.setState(initialSession, true);
 });
 
 describe('addClip', () => {
@@ -67,6 +72,30 @@ describe('removeClip', () => {
 
     state().removeClip(clipId);
     expect(videoClips()).toHaveLength(0);
+  });
+});
+
+describe('removeClips', () => {
+  it('removes every listed clip in a single undo entry', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(2000), duration: ms(1000) });
+    const [a, b] = videoClips() ?? [];
+    if (!a || !b) throw new Error('Expected two clips.');
+    const pastBefore = state().past.length;
+
+    state().removeClips([a.id, b.id]);
+
+    expect(videoClips()).toHaveLength(0);
+    expect(state().past.length).toBe(pastBefore + 1);
+  });
+
+  it('is a no-op for an empty list', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    const before = state().document;
+
+    state().removeClips([]);
+
+    expect(state().document).toBe(before);
   });
 });
 
@@ -233,5 +262,83 @@ describe('undo / redo', () => {
 
     expect(state().past).toHaveLength(0);
     expect(state().future).toHaveLength(0);
+  });
+});
+
+describe('editing session reconciliation', () => {
+  it('clears a clip selection when the project is reset', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    const clipId = videoClips()![0]!.id;
+    session().select({ type: 'clip', id: clipId });
+    session().setZoom(250);
+
+    state().reset();
+
+    expect(getSelectedClipId(session().session)).toBeNull();
+    expect(session().session.viewport.zoom).toBe(250);
+  });
+
+  it('clears a clip selection when the selected clip is removed', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    const clipId = videoClips()![0]!.id;
+    session().select({ type: 'clip', id: clipId });
+    expect(getSelectedClipId(session().session)).toBe(clipId);
+
+    state().removeClip(clipId);
+    expect(getSelectedClipId(session().session)).toBeNull();
+  });
+
+  it('does not resurrect a cleared selection on redo', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    const clipId = videoClips()![0]!.id;
+    session().select({ type: 'clip', id: clipId });
+
+    state().undo();
+    expect(getSelectedClipId(session().session)).toBeNull();
+
+    state().redo();
+    expect(getSelectedClipId(session().session)).toBeNull();
+  });
+
+  it('clears a transition selection when moving an endpoint drops the transition', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(1000), duration: ms(1000) });
+    const [from, to] = videoClips() ?? [];
+    if (!from || !to) throw new Error('Expected adjacent clips.');
+    const added = state().addTransition({
+      fromClipId: from.id,
+      toClipId: to.id,
+      kind: 'crossfade',
+      duration: ms(250),
+    });
+    if (!added.ok) throw new Error('Expected the transition to be added.');
+    const transitionId = state().document.transitions[0]!.id;
+    session().select({ type: 'transition', id: transitionId });
+
+    state().moveClip(to.id, ms(5000));
+    expect(getSelectedTransitionId(session().session)).toBeNull();
+  });
+
+  it('clears a stale clip selection on load and retains the viewport', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    const clipId = videoClips()![0]!.id;
+    session().select({ type: 'clip', id: clipId });
+    session().setZoom(250);
+
+    const documentWithoutTheClip = initial.document;
+    state().load(documentWithoutTheClip);
+
+    expect(getSelectedClipId(session().session)).toBeNull();
+    expect(session().session.viewport.zoom).toBe(250);
+  });
+
+  it('preserves the original clip id selection across a split', () => {
+    state().addClip({ trackId: VIDEO, assetId: ASSET, start: ms(0), duration: ms(1000) });
+    const clipId = videoClips()![0]!.id;
+    session().select({ type: 'clip', id: clipId });
+
+    const result = state().splitClip(clipId, ms(500));
+    expect(result.ok).toBe(true);
+    expect(getSelectedClipId(session().session)).toBe(clipId);
   });
 });

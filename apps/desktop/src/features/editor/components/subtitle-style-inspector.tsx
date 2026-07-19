@@ -19,12 +19,19 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSubtitleStore } from '../subtitle.store';
 
-/** A font source that can later be supplied by plugins or project embedding. */
+/**
+ * A font source that can later be supplied by plugins or project embedding.
+ *
+ * `bundled` fonts ship as data-URI @font-face declarations in
+ * `@videodip/renderer`'s `caption-fonts.css` (see the module doc there) —
+ * zero network calls at runtime, so they stay available offline exactly like
+ * `system` fonts, just with real files behind them instead of CSS generics.
+ */
 export interface SubtitleFontOption {
   readonly id: string;
   readonly label: string;
   readonly family: string;
-  readonly source: 'system' | 'project' | 'plugin';
+  readonly source: 'system' | 'bundled' | 'project' | 'plugin';
 }
 
 /** Offline-safe fonts available without downloading or embedding assets. */
@@ -33,6 +40,24 @@ export const DEFAULT_SUBTITLE_FONTS: readonly SubtitleFontOption[] = [
   { id: 'serif', label: 'Serif', family: 'serif', source: 'system' },
   { id: 'monospace', label: 'Monospace', family: 'monospace', source: 'system' },
   { id: 'system-ui', label: 'System UI', family: 'system-ui', source: 'system' },
+  { id: 'poppins', label: 'Poppins', family: 'Poppins', source: 'bundled' },
+  { id: 'montserrat', label: 'Montserrat', family: 'Montserrat', source: 'bundled' },
+  { id: 'oswald', label: 'Oswald', family: 'Oswald', source: 'bundled' },
+  { id: 'anton', label: 'Anton', family: 'Anton', source: 'bundled' },
+  { id: 'bebas-neue', label: 'Bebas Neue', family: 'Bebas Neue', source: 'bundled' },
+  {
+    id: 'playfair-display',
+    label: 'Playfair Display',
+    family: 'Playfair Display',
+    source: 'bundled',
+  },
+  { id: 'caveat', label: 'Caveat', family: 'Caveat', source: 'bundled' },
+  {
+    id: 'permanent-marker',
+    label: 'Permanent Marker',
+    family: 'Permanent Marker',
+    source: 'bundled',
+  },
 ];
 
 const RECENT_FONTS_KEY = 'videodip.subtitle.recent-fonts';
@@ -381,7 +406,11 @@ export function SubtitleStyleInspector({
             <option value="none">Still</option>
             <option value="fade">Fade</option>
             <option value="pop">Pop</option>
+            <option value="bounce">Bounce</option>
             <option value="slide-up">Slide up</option>
+            <option value="slide-down">Slide down</option>
+            <option value="slide-left">Slide left</option>
+            <option value="slide-right">Slide right</option>
           </select>
         </ControlRow>
       </InspectorSection>
@@ -495,7 +524,14 @@ export function SubtitleColorInput({
 }) {
   const [draft, setDraft] = useState(() => toNativeColor(value));
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => setDraft(toNativeColor(value)), [value]);
+  const draftRef = useRef(draft);
+  const callbacksRef = useRef({ onPreview, onCommit });
+  callbacksRef.current = { onPreview, onCommit };
+  useEffect(() => {
+    const next = toNativeColor(value);
+    draftRef.current = next;
+    setDraft((current) => (current === next ? current : next));
+  }, [value]);
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
@@ -504,13 +540,16 @@ export function SubtitleColorInput({
     // picker-dismissal boundary and therefore the one undo commit point.
     const commitNativeChange = () => {
       const next = input.value;
-      setDraft(next);
-      onPreview(next);
-      onCommit();
+      if (next !== draftRef.current) {
+        draftRef.current = next;
+        setDraft(next);
+        callbacksRef.current.onPreview(next);
+      }
+      callbacksRef.current.onCommit();
     };
     input.addEventListener('change', commitNativeChange);
     return () => input.removeEventListener('change', commitNativeChange);
-  }, [onCommit, onPreview]);
+  }, []);
 
   return (
     <input
@@ -521,12 +560,16 @@ export function SubtitleColorInput({
       disabled={disabled}
       onInput={(event) => {
         const next = event.currentTarget.value;
+        if (next === draftRef.current) return;
+        draftRef.current = next;
         setDraft(next);
-        onPreview(next);
+        callbacksRef.current.onPreview(next);
       }}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
-          setDraft(toNativeColor(value));
+          const next = toNativeColor(value);
+          draftRef.current = next;
+          setDraft(next);
           onCancel();
         }
       }}

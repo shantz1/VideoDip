@@ -8,31 +8,33 @@ import {
   type SubtitleWord,
 } from '@videodip/subtitle-engine';
 import { ms } from '@videodip/shared';
+import { getSelectedSubtitleSegmentId } from '@videodip/timeline';
 import { Button, cn } from '@videodip/ui';
 import { Captions, FileDown, FileUp, Plus, Scissors, Trash2 } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useEditorStore } from '../editor.store';
+import { useSessionStore } from '../session.store';
 import { useSubtitleStore } from '../subtitle.store';
 import { SubtitleStyleInspector } from './subtitle-style-inspector';
 
 /** Complete document-level subtitle timing, text, style, and interchange editor. */
 export function SubtitleEditor() {
   const document = useSubtitleStore((state) => state.document);
-  const selectedId = useEditorStore((state) => state.selectedSubtitleId);
+  const selectedId = useSessionStore((state) => getSelectedSubtitleSegmentId(state.session));
   const select = useSubtitleStore((state) => state.select);
   const add = useSubtitleStore((state) => state.add);
   const replace = useSubtitleStore((state) => state.replace);
   const setLanguage = useSubtitleStore((state) => state.setLanguage);
   const playhead = useEditorStore((state) => state.playhead);
   const seek = useEditorStore((state) => state.seek);
-  const selectClip = useEditorStore((state) => state.selectClip);
+  const clearSelection = useSessionStore((state) => state.clearSelection);
   const [format, setFormat] = useState<SubtitleFormat>('srt');
   const [interchangeText, setInterchangeText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const selected = document.segments.find((segment) => segment.id === selectedId);
 
   const addCue = () => {
-    selectClip(null);
+    clearSelection();
     const start = findFreeCueStart(document.segments, playhead, 2000);
     const result = add({ start: ms(start), end: ms(start + 2000), text: 'New subtitle' });
     setError(result.ok ? null : result.error.recovery);
@@ -88,7 +90,6 @@ export function SubtitleEditor() {
                 <button
                   type="button"
                   onClick={() => {
-                    selectClip(null);
                     select(segment.id);
                     seek(segment.start);
                   }}

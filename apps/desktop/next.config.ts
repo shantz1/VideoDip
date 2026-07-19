@@ -17,8 +17,10 @@ const config: NextConfig = {
   images: { unoptimized: true },
 
   // Transpile workspace packages: they ship untranspiled ESM with `use client`
-  // directives intact (ADR-0003).
-  transpilePackages: ['@videodip/ui', '@videodip/shared'],
+  // directives intact (ADR-0003). `@videodip/renderer` is here specifically
+  // so Next's webpack (not just tsup/esbuild) processes its CSS export —
+  // the bundled caption font pack (`caption-fonts.css`).
+  transpilePackages: ['@videodip/ui', '@videodip/shared', '@videodip/renderer'],
 
   reactStrictMode: true,
 

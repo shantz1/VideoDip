@@ -216,4 +216,16 @@ describe('projectSnapshotSchema', () => {
   it('rejects clips whose media is absent from the project library', () => {
     expect(projectSnapshotSchema.safeParse({ ...SNAPSHOT, mediaItems: [] }).success).toBe(false);
   });
+
+  it('rejects a persisted editing session: it is ephemeral and must never be saved', () => {
+    expect(
+      projectSnapshotSchema.safeParse({ ...SNAPSHOT, session: { selection: null } }).success,
+    ).toBe(false);
+    expect(
+      projectSnapshotSchema.safeParse({
+        ...SNAPSHOT,
+        editingSession: { selection: null, viewport: { zoom: 50, isSnappingEnabled: true } },
+      }).success,
+    ).toBe(false);
+  });
 });

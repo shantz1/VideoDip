@@ -40,10 +40,16 @@ export type TransitionKind = string;
 export type CoreTransitionKind =
   | 'crossfade'
   | 'dip-to-black'
+  | 'dip-to-white'
   | 'slide-left'
   | 'slide-right'
+  | 'slide-up'
+  | 'slide-down'
   | 'wipe-left'
-  | 'wipe-right';
+  | 'wipe-right'
+  | 'wipe-up'
+  | 'wipe-down'
+  | 'zoom-in';
 
 /**
  * An effect joining two adjacent clips on the same generic track.

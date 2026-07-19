@@ -14,6 +14,7 @@ import {
   toCompositionSubtitles,
 } from '../lib/composition-adapter';
 import { useProjectStore } from '../project.store';
+import { useSessionStore } from '../session.store';
 import { useSubtitleStore } from '../subtitle.store';
 
 /**
@@ -54,6 +55,7 @@ export function PreviewPlayer() {
   const isPlaying = useEditorStore((s) => s.isPlaying);
   const seek = useEditorStore((s) => s.seek);
   const pause = useEditorStore((s) => s.pause);
+  const clipTransformPreview = useSessionStore((state) => state.session.clipTransformPreview);
 
   const clips = useMemo(() => {
     const mediaByAsset = new Map(mediaItems.map((item) => [item.id, item]));
@@ -69,8 +71,14 @@ export function PreviewPlayer() {
         mediaKind: item.kind,
       };
     };
-    return toCompositionClips(documentValue, resolveAsset);
-  }, [documentValue, mediaItems, resolveMediaSource]);
+    const resolved = toCompositionClips(documentValue, resolveAsset);
+    if (clipTransformPreview === null) return resolved;
+    return resolved.map((clip) =>
+      clip.id === clipTransformPreview.clipId
+        ? { ...clip, transform: clipTransformPreview.transform }
+        : clip,
+    );
+  }, [clipTransformPreview, documentValue, mediaItems, resolveMediaSource]);
 
   const subtitleDuration = subtitleDocument.segments.at(-1)?.end ?? 0;
   const durationInFrames = Math.max(

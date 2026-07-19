@@ -45,7 +45,15 @@ export interface SubtitleStyle {
   readonly positionY: Normalized;
   readonly rotation: number;
   readonly scale: number;
-  readonly animation: 'none' | 'fade' | 'pop' | 'slide-up';
+  readonly animation:
+    | 'none'
+    | 'fade'
+    | 'pop'
+    | 'bounce'
+    | 'slide-up'
+    | 'slide-down'
+    | 'slide-left'
+    | 'slide-right';
 }
 
 /** One editable subtitle cue and its optional word-level timings. */

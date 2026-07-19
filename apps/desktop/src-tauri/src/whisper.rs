@@ -552,8 +552,15 @@ fn model_root(app: &AppHandle) -> Result<PathBuf, String> {
 /// Two cores stay free so the editor UI never starves during a long
 /// transcription; the ceiling reflects whisper.cpp's memory-bound encoder,
 /// which stops scaling around eight threads.
+/// Threads leave 2 cores free for the OS/UI, then clamp to a range where
+/// whisper.cpp's matmul kernels still scale roughly linearly. The old
+/// ceiling of 8 was set before modern 12-24 logical-core creator machines
+/// were common; whisper.cpp's own benchmarks continue to show throughput
+/// gains up to ~16 threads before memory-bandwidth contention dominates, so
+/// raising the ceiling (not the floor — small machines are unaffected)
+/// meaningfully speeds up transcription on today's typical hardware.
 fn transcription_thread_count(available: usize) -> usize {
-    available.saturating_sub(2).clamp(4, 8)
+    available.saturating_sub(2).clamp(4, 16)
 }
 
 fn runtime_path() -> Option<PathBuf> {
@@ -616,8 +623,9 @@ mod tests {
         assert_eq!(transcription_thread_count(2), 4);
         assert_eq!(transcription_thread_count(4), 4);
         assert_eq!(transcription_thread_count(8), 6);
-        assert_eq!(transcription_thread_count(12), 8);
-        assert_eq!(transcription_thread_count(32), 8);
+        assert_eq!(transcription_thread_count(12), 10);
+        assert_eq!(transcription_thread_count(24), 16);
+        assert_eq!(transcription_thread_count(32), 16);
     }
 
     #[test]

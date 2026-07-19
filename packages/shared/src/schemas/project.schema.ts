@@ -246,7 +246,18 @@ const subtitleStylePatchSchema = z
     positionY: normalizedSchema.optional(),
     rotation: z.number().finite().min(-36_000).max(36_000).optional(),
     scale: z.number().finite().positive().max(100).optional(),
-    animation: z.enum(['none', 'fade', 'pop', 'slide-up']).optional(),
+    animation: z
+      .enum([
+        'none',
+        'fade',
+        'pop',
+        'bounce',
+        'slide-up',
+        'slide-down',
+        'slide-left',
+        'slide-right',
+      ])
+      .optional(),
   })
   .transform(({ isBold, ...style }) => ({
     ...omitNullishValues(style),
@@ -298,7 +309,18 @@ const subtitleStyleSchema = z
     positionY: normalizedSchema.default(normalized(0.88)),
     rotation: z.number().finite().min(-36_000).max(36_000).default(0),
     scale: z.number().finite().positive().max(100).default(1),
-    animation: z.enum(['none', 'fade', 'pop', 'slide-up']).default('fade'),
+    animation: z
+      .enum([
+        'none',
+        'fade',
+        'pop',
+        'bounce',
+        'slide-up',
+        'slide-down',
+        'slide-left',
+        'slide-right',
+      ])
+      .default('fade'),
   })
   .transform(({ isBold, ...style }) => ({
     ...style,

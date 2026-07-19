@@ -1,6 +1,13 @@
 import type { MediaKind } from '@videodip/shared';
 import { AbsoluteFill, Audio, OffthreadVideo, Sequence, useCurrentFrame } from 'remotion';
 import { z } from 'zod';
+// Data-URI @font-face declarations for the bundled caption font pack.
+// Imported here — not in apps/desktop's global styles alone — because this
+// composition is the one component shared by live preview and headless
+// export (see the module doc below); a stylesheet imported only by the
+// desktop app would never reach the headless Chrome instance render-cli
+// drives for export.
+import '../assets/caption-fonts.generated.css';
 
 const positiveInteger = z.number().int().positive();
 
@@ -102,7 +109,16 @@ export const compositionSubtitleSchema = z.object({
     positionY: z.number().finite().min(0).max(1),
     rotation: z.number().finite(),
     scale: z.number().finite().positive(),
-    animation: z.enum(['none', 'fade', 'pop', 'slide-up']),
+    animation: z.enum([
+      'none',
+      'fade',
+      'pop',
+      'bounce',
+      'slide-up',
+      'slide-down',
+      'slide-left',
+      'slide-right',
+    ]),
   }),
 });
 
@@ -223,7 +239,15 @@ export interface CompositionSubtitle {
     readonly positionY: number;
     readonly rotation: number;
     readonly scale: number;
-    readonly animation: 'none' | 'fade' | 'pop' | 'slide-up';
+    readonly animation:
+      | 'none'
+      | 'fade'
+      | 'pop'
+      | 'bounce'
+      | 'slide-up'
+      | 'slide-down'
+      | 'slide-left'
+      | 'slide-right';
   };
 }
 
@@ -286,9 +310,28 @@ function RenderedSubtitle({ subtitle }: { readonly subtitle: CompositionSubtitle
   const frame = useCurrentFrame();
   const textAlign = subtitle.style.alignment;
   const entrance = Math.min(1, frame / 6);
-  const animatedOpacity = subtitle.style.animation === 'none' ? 1 : entrance;
-  const animatedScale = subtitle.style.animation === 'pop' ? 0.8 + entrance * 0.2 : 1;
-  const animatedY = subtitle.style.animation === 'slide-up' ? (1 - entrance) * 24 : 0;
+  const animation = subtitle.style.animation;
+  const animatedOpacity = animation === 'none' ? 1 : entrance;
+  const animatedScale =
+    animation === 'pop'
+      ? 0.8 + entrance * 0.2
+      : // A quick decaying oscillation: overshoots past 1 then settles, distinct
+        // from `pop`'s fixed grow-in-from-smaller curve.
+        animation === 'bounce'
+        ? 1 + Math.sin(entrance * Math.PI * 2) * (1 - entrance) * 0.25
+        : 1;
+  const animatedY =
+    animation === 'slide-up'
+      ? (1 - entrance) * 24
+      : animation === 'slide-down'
+        ? -(1 - entrance) * 24
+        : 0;
+  const animatedX =
+    animation === 'slide-left'
+      ? (1 - entrance) * 24
+      : animation === 'slide-right'
+        ? -(1 - entrance) * 24
+        : 0;
   return (
     <div
       style={{
@@ -296,7 +339,7 @@ function RenderedSubtitle({ subtitle }: { readonly subtitle: CompositionSubtitle
         left: `${subtitle.style.positionX * 100}%`,
         top: `${subtitle.style.positionY * 100}%`,
         width: `${subtitle.style.maxWidth * 100}%`,
-        transform: `translate(-50%, calc(-50% + ${animatedY}px)) rotate(${subtitle.style.rotation}deg) scale(${subtitle.style.scale * animatedScale})`,
+        transform: `translate(calc(-50% + ${animatedX}px), calc(-50% + ${animatedY}px)) rotate(${subtitle.style.rotation}deg) scale(${subtitle.style.scale * animatedScale})`,
         opacity: subtitle.style.opacity * animatedOpacity,
         textAlign,
         fontFamily: subtitle.style.fontFamily,
@@ -379,19 +422,30 @@ function RenderedClip({ clip }: { readonly clip: CompositionClip }) {
   // reference the user's media by plain absolute path instead of a URL the
   // sandboxed browser could never load (ADR-0011).
   return (
-    <OffthreadVideo
-      src={clip.src}
-      trimBefore={clip.sourceStartFrame}
-      style={{
-        height: '100%',
-        width: '100%',
-        objectFit: 'contain',
-        opacity: opacity * transition.opacity,
-        mixBlendMode: clip.blendMode,
-        clipPath: transition.clipPath,
-        transform: `translate(${positionX * 100}%, ${positionY * 100}%) translateX(${transition.translateX}%) rotate(${rotation}deg) scale(${scaleX}, ${scaleY})`,
-      }}
-    />
+    <>
+      <OffthreadVideo
+        src={clip.src}
+        trimBefore={clip.sourceStartFrame}
+        style={{
+          height: '100%',
+          width: '100%',
+          objectFit: 'contain',
+          opacity: opacity * transition.opacity,
+          mixBlendMode: clip.blendMode,
+          clipPath: transition.clipPath,
+          transform: `translate(${positionX * 100}%, ${positionY * 100}%) translateX(${transition.translateX}%) translateY(${transition.translateY}%) rotate(${rotation}deg) scale(${scaleX * transition.scale}, ${scaleY * transition.scale})`,
+        }}
+      />
+      {transition.flashOpacity > 0 && (
+        <AbsoluteFill
+          style={{
+            backgroundColor: 'white',
+            opacity: transition.flashOpacity,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -407,22 +461,42 @@ function audioVolume(clip: CompositionClip, frame: number): number {
 interface TransitionVisualState {
   readonly opacity: number;
   readonly translateX: number;
+  readonly translateY: number;
+  readonly scale: number;
   readonly clipPath: string | undefined;
+  /** White flash overlay opacity, used by dip-to-white since the composition's own background is black. */
+  readonly flashOpacity: number;
 }
+
+/** How far a zoom-in transition punches in/out, as a fraction of normal scale. */
+const ZOOM_IN_AMOUNT = 0.15;
 
 function transitionVisualState(clip: CompositionClip, frame: number): TransitionVisualState {
   let opacity = 1;
   let translateX = 0;
+  let translateY = 0;
+  let scale = 1;
   let clipPath: string | undefined;
+  let flashOpacity = 0;
+
   const incoming = clip.transitionIn;
   if (incoming) {
     const progress = clamp01(frame / incoming.durationInFrames);
     if (incoming.kind === 'dip-to-black') opacity *= clamp01((progress - 0.5) * 2);
-    else if (!isDirectionalTransition(incoming.kind)) opacity *= progress;
+    else if (incoming.kind === 'dip-to-white') {
+      const dipOpacity = clamp01((progress - 0.5) * 2);
+      opacity *= dipOpacity;
+      flashOpacity = Math.max(flashOpacity, 1 - dipOpacity);
+    } else if (!isDirectionalTransition(incoming.kind)) opacity *= progress;
     if (incoming.kind === 'slide-left') translateX += (1 - progress) * 100;
     if (incoming.kind === 'slide-right') translateX -= (1 - progress) * 100;
+    if (incoming.kind === 'slide-up') translateY += (1 - progress) * 100;
+    if (incoming.kind === 'slide-down') translateY -= (1 - progress) * 100;
     if (incoming.kind === 'wipe-left') clipPath = `inset(0 ${(1 - progress) * 100}% 0 0)`;
     if (incoming.kind === 'wipe-right') clipPath = `inset(0 0 0 ${(1 - progress) * 100}%)`;
+    if (incoming.kind === 'wipe-up') clipPath = `inset(0 0 ${(1 - progress) * 100}% 0)`;
+    if (incoming.kind === 'wipe-down') clipPath = `inset(${(1 - progress) * 100}% 0 0 0)`;
+    if (incoming.kind === 'zoom-in') scale *= 1 + (1 - progress) * ZOOM_IN_AMOUNT;
   }
 
   const outgoing = clip.transitionOut;
@@ -430,11 +504,18 @@ function transitionVisualState(clip: CompositionClip, frame: number): Transition
     const startsAt = clip.durationInFrames;
     const progress = clamp01((frame - startsAt) / outgoing.durationInFrames);
     if (outgoing.kind === 'dip-to-black') opacity *= 1 - clamp01(progress * 2);
-    else if (!isDirectionalTransition(outgoing.kind)) opacity *= 1 - progress;
+    else if (outgoing.kind === 'dip-to-white') {
+      const dipOpacity = 1 - clamp01(progress * 2);
+      opacity *= dipOpacity;
+      flashOpacity = Math.max(flashOpacity, 1 - dipOpacity);
+    } else if (!isDirectionalTransition(outgoing.kind)) opacity *= 1 - progress;
     if (outgoing.kind === 'slide-left') translateX -= progress * 100;
     if (outgoing.kind === 'slide-right') translateX += progress * 100;
+    if (outgoing.kind === 'slide-up') translateY -= progress * 100;
+    if (outgoing.kind === 'slide-down') translateY += progress * 100;
+    if (outgoing.kind === 'zoom-in') scale *= 1 - progress * ZOOM_IN_AMOUNT;
   }
-  return { opacity, translateX, clipPath };
+  return { opacity, translateX, translateY, scale, clipPath, flashOpacity };
 }
 
 function transitionAudioFactor(clip: CompositionClip, frame: number): number {
@@ -449,9 +530,22 @@ function transitionAudioFactor(clip: CompositionClip, frame: number): number {
   return factor;
 }
 
+/**
+ * Transitions that reveal the incoming/outgoing clip through position or a
+ * clip-path mask rather than through opacity. Their clip stays fully opaque
+ * for the crossfade component of `transitionVisualState`; `zoom-in` is
+ * deliberately excluded because it crossfades and scales together.
+ */
 function isDirectionalTransition(kind: string): boolean {
   return (
-    kind === 'slide-left' || kind === 'slide-right' || kind === 'wipe-left' || kind === 'wipe-right'
+    kind === 'slide-left' ||
+    kind === 'slide-right' ||
+    kind === 'slide-up' ||
+    kind === 'slide-down' ||
+    kind === 'wipe-left' ||
+    kind === 'wipe-right' ||
+    kind === 'wipe-up' ||
+    kind === 'wipe-down'
   );
 }
 

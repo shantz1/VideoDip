@@ -12,10 +12,11 @@ import {
   type SubtitleStyle,
 } from '@videodip/subtitle-engine';
 import { ms, type Milliseconds, type Result, type SegmentId } from '@videodip/shared';
-import { getDuration } from '@videodip/timeline';
+import { getDuration, getSelectedSubtitleSegmentId } from '@videodip/timeline';
 import { create } from 'zustand';
 import { useEditorStore } from './editor.store';
 import { useProjectStore } from './project.store';
+import { useSessionStore } from './session.store';
 
 interface SubtitleState {
   readonly document: SubtitleDocument;
@@ -53,7 +54,7 @@ export const useSubtitleStore = create<SubtitleState>()((set, get) => ({
   past: [],
   future: [],
 
-  select: (selectedSegmentId) => useEditorStore.getState().selectSubtitle(selectedSegmentId),
+  select: (selectedSegmentId) => selectSubtitleSegment(selectedSegmentId),
   add: (input) => {
     const result = addSegment(get().document, input);
     if (result.ok) {
@@ -86,18 +87,28 @@ export const useSubtitleStore = create<SubtitleState>()((set, get) => ({
     if (normalizedLanguage === get().document.language) return;
     commit(
       { ...get().document, language: normalizedLanguage },
-      useEditorStore.getState().selectedSubtitleId,
+      getSelectedSubtitleSegmentId(useSessionStore.getState().session),
     );
   },
   setDefaultStyle: (defaultStyle) =>
-    commit({ ...get().document, defaultStyle }, useEditorStore.getState().selectedSubtitleId),
+    commit(
+      { ...get().document, defaultStyle },
+      getSelectedSubtitleSegmentId(useSessionStore.getState().session),
+    ),
   previewStyle: (id, patch) =>
-    set((state) => ({
-      stylePreviews: {
-        ...state.stylePreviews,
-        [id]: { ...state.stylePreviews[id], ...patch },
-      },
-    })),
+    set((state) => {
+      const current = state.stylePreviews[id] ?? {};
+      const changed = Object.entries(patch).some(
+        ([key, value]) => current[key as keyof SubtitleStyle] !== value,
+      );
+      if (!changed) return state;
+      return {
+        stylePreviews: {
+          ...state.stylePreviews,
+          [id]: { ...current, ...patch },
+        },
+      };
+    }),
   commitStylePreview: (id) => {
     const preview = get().stylePreviews[id];
     if (!preview) return { ok: true, value: get().document };
@@ -118,7 +129,7 @@ export const useSubtitleStore = create<SubtitleState>()((set, get) => ({
       past: state.past.slice(0, -1),
       future: [state.document, ...state.future],
     });
-    useEditorStore.getState().selectSubtitle(previous.segments[0]?.id ?? null);
+    selectSubtitleSegment(previous.segments[0]?.id ?? null);
     useEditorStore.getState().markDirty();
   },
   redo: () => {
@@ -131,20 +142,37 @@ export const useSubtitleStore = create<SubtitleState>()((set, get) => ({
       past: [...state.past, state.document],
       future,
     });
-    useEditorStore.getState().selectSubtitle(next.segments[0]?.id ?? null);
+    selectSubtitleSegment(next.segments[0]?.id ?? null);
     useEditorStore.getState().markDirty();
   },
   reset: () => {
     set({ document: createSubtitleDocument(), stylePreviews: {}, past: [], future: [] });
-    useEditorStore.getState().selectSubtitle(null);
+    selectSubtitleSegment(null);
     syncDuration(createSubtitleDocument());
   },
   load: (document) => {
     set({ document, stylePreviews: {}, past: [], future: [] });
-    useEditorStore.getState().selectSubtitle(null);
+    selectSubtitleSegment(null);
     syncDuration(document);
   },
 }));
+
+/**
+ * Selects a subtitle segment (or clears one) in the shared editing session.
+ *
+ * Clearing only acts when the current selection is itself a subtitle
+ * segment — a blanket clear would wipe an unrelated clip/transition
+ * selection, which selectSubtitle(null) never did either under the old
+ * single-field editor-store model.
+ */
+function selectSubtitleSegment(id: SegmentId | null): void {
+  const sessionStore = useSessionStore.getState();
+  if (id !== null) {
+    sessionStore.select({ type: 'subtitle-segment', id });
+  } else if (getSelectedSubtitleSegmentId(sessionStore.session) !== null) {
+    sessionStore.clearSelection();
+  }
+}
 
 function commit(document: SubtitleDocument, selectedSegmentId: SegmentId | null): void {
   const state = useSubtitleStore.getState();
@@ -154,7 +182,7 @@ function commit(document: SubtitleDocument, selectedSegmentId: SegmentId | null)
     past: [...state.past, state.document],
     future: [],
   });
-  useEditorStore.getState().selectSubtitle(selectedSegmentId);
+  selectSubtitleSegment(selectedSegmentId);
   useEditorStore.getState().markDirty();
   syncDuration(document);
 }

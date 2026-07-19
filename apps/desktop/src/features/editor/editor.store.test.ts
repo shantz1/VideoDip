@@ -69,32 +69,6 @@ describe('playhead', () => {
   });
 });
 
-describe('zoom', () => {
-  it('steps multiplicatively', () => {
-    const before = state().zoom;
-    state().zoomIn();
-    // Multiplicative because zoom is perceptually logarithmic; an additive
-    // step feels wrong at both extremes.
-    expect(state().zoom).toBeGreaterThan(before);
-    expect(state().zoom / before).toBeCloseTo(1.3);
-  });
-
-  it('clamps at the maximum however far it is pushed', () => {
-    for (let i = 0; i < 50; i++) state().zoomIn();
-    expect(state().zoom).toBe(400);
-  });
-
-  it('clamps at the minimum however far it is pushed', () => {
-    for (let i = 0; i < 50; i++) state().zoomOut();
-    expect(state().zoom).toBe(5);
-  });
-
-  it('clamps a directly set zoom', () => {
-    state().setZoom(10_000);
-    expect(state().zoom).toBe(400);
-  });
-});
-
 describe('aspect ratio', () => {
   it('defaults to 9:16', () => {
     expect(state().aspectRatio).toBe('9:16');
@@ -132,6 +106,37 @@ describe('playback', () => {
 });
 
 describe('layout', () => {
+  it('switches media library views without recording a project edit', () => {
+    expect(state().mediaLibraryView).toBe('grid');
+    state().setMediaLibraryView('list');
+    expect(state().mediaLibraryView).toBe('list');
+    expect(state().editRevision).toBe(0);
+    expect(state().isDirty).toBe(false);
+  });
+
+  it('auditions media by stopping timeline playback without recording an edit', () => {
+    state().play();
+    state().setMediaPreview('asset-preview' as never);
+    expect(state().mediaPreviewAssetId).toBe('asset-preview');
+    expect(state().isPlaying).toBe(false);
+    expect(state().editRevision).toBe(0);
+    expect(state().isDirty).toBe(false);
+
+    state().setMediaPreview(null);
+    expect(state().mediaPreviewAssetId).toBeNull();
+  });
+
+  it('toggles Instagram placement guides without recording a project edit', () => {
+    state().toggleInstagramSafeGrid();
+    expect(state().isInstagramSafeGridEnabled).toBe(true);
+    expect(state().editRevision).toBe(0);
+    expect(state().isDirty).toBe(false);
+  });
+
+  it('starts in the center-preview video workspace', () => {
+    expect(state().workspaceLayout).toBe('video');
+  });
+
   it('applies a full video workspace without changing project content', () => {
     useEditorStore.setState({
       workspaceLayout: 'short-video',
@@ -205,34 +210,37 @@ describe('layout', () => {
     state().setStagePaneWidth(null);
     expect(state().stagePaneWidth).toBeNull();
   });
-});
 
-describe('selection', () => {
-  it('keeps clip, transition, and subtitle selections mutually exclusive', () => {
-    state().selectClip('clip-1' as never);
-    expect(state().selectedClipId).toBe('clip-1');
+  it('clamps resizable side panes without recording project edits', () => {
+    state().setLibraryPaneWidth(400);
+    state().setInspectorPaneWidth(420);
+    expect(state().libraryPaneWidth).toBe(400);
+    expect(state().inspectorPaneWidth).toBe(420);
 
-    state().selectTransition('transition-1' as never);
-    expect(state().selectedTransitionId).toBe('transition-1');
-    expect(state().selectedClipId).toBeNull();
+    state().setLibraryPaneWidth(10);
+    state().setInspectorPaneWidth(99_999);
+    expect(state().libraryPaneWidth).toBe(240);
+    expect(state().inspectorPaneWidth).toBe(560);
+    expect(state().editRevision).toBe(0);
+    expect(state().isDirty).toBe(false);
 
-    state().selectClip('clip-2' as never);
-    expect(state().selectedTransitionId).toBeNull();
+    state().setLibraryPaneWidth(null);
+    state().setInspectorPaneWidth(null);
+    expect(state().libraryPaneWidth).toBeNull();
+    expect(state().inspectorPaneWidth).toBeNull();
+  });
 
-    state().selectSubtitle('subtitle-1' as never);
-    expect(state().selectedSubtitleId).toBe('subtitle-1');
-    expect(state().selectedClipId).toBeNull();
-    expect(state().selectedTransitionId).toBeNull();
-
-    state().selectTransition('transition-2' as never);
-    expect(state().selectedSubtitleId).toBeNull();
-
-    state().selectSubtitle('subtitle-2' as never);
-    state().selectClip('clip-3' as never);
-    expect(state().selectedSubtitleId).toBeNull();
-
-    state().selectClip(null);
-    expect(state().selectedClipId).toBeNull();
+  it('clamps timeline height without recording project edits', () => {
+    state().setTimelinePaneHeight(480);
+    expect(state().timelinePaneHeight).toBe(480);
+    state().setTimelinePaneHeight(10);
+    expect(state().timelinePaneHeight).toBe(120);
+    state().setTimelinePaneHeight(99_999);
+    expect(state().timelinePaneHeight).toBe(1200);
+    expect(state().editRevision).toBe(0);
+    expect(state().isDirty).toBe(false);
+    state().setTimelinePaneHeight(null);
+    expect(state().timelinePaneHeight).toBeNull();
   });
 });
 
@@ -246,12 +254,6 @@ describe('project', () => {
     expect(state().projectName).toBe('Untitled project');
     expect(state().projectCreatedAt).toBe('2026-07-17T10:00:00.000Z');
     expect(state().isDirty).toBe(true);
-  });
-
-  it('clears any clip selection when starting a new project', () => {
-    state().selectClip('clip-1' as never);
-    state().newProject();
-    expect(state().selectedClipId).toBeNull();
   });
 
   it('increments the name on repeated clicks so it is visibly not a no-op', () => {

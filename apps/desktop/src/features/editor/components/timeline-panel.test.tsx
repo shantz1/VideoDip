@@ -2,6 +2,7 @@ import userEvent from '@testing-library/user-event';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createMediaItem } from '@videodip/media-engine';
 import { mediaLocatorSchema, ms } from '@videodip/shared';
+import { getSelectedClipId, getSelectedTransitionId } from '@videodip/timeline';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEditorStore } from '../editor.store';
 import {
@@ -10,14 +11,17 @@ import {
   trackColorClass,
 } from '../lib/timeline-presentation';
 import { useProjectStore } from '../project.store';
+import { useSessionStore } from '../session.store';
 import { TimelinePanel } from './timeline-panel';
 
 const initialEditor = useEditorStore.getState();
 const initialProject = useProjectStore.getState();
+const initialSession = useSessionStore.getState();
 
 beforeEach(() => {
   useEditorStore.setState(initialEditor, true);
   useProjectStore.setState(initialProject, true);
+  useSessionStore.setState(initialSession, true);
   globalThis.ResizeObserver = class {
     observe() {}
     unobserve() {}
@@ -60,7 +64,7 @@ describe('playhead scrubbing', () => {
     // jsdom has no pointer-capture implementation; the handlers gate on it.
     Element.prototype.setPointerCapture = vi.fn();
     Element.prototype.hasPointerCapture = vi.fn(() => true);
-    useEditorStore.setState({ zoom: 100 });
+    useSessionStore.getState().setZoom(100);
     useEditorStore.getState().setProjectDuration(ms(60_000));
   });
 
@@ -100,6 +104,67 @@ describe('playhead scrubbing', () => {
   });
 });
 
+describe('multi-select', () => {
+  function renderThreeClips() {
+    const items = ['First', 'Second', 'Third'].map((name) =>
+      createMediaItem({
+        locator: mediaLocatorSchema.parse(`opaque:${name.toLowerCase()}`),
+        name: `${name}.mp4`,
+        kind: 'video',
+      }),
+    );
+    useEditorStore.setState({ mediaItems: items });
+    items.forEach((item, index) => {
+      useProjectStore.getState().addClip({
+        trackId: 'video' as never,
+        assetId: item.id,
+        start: ms(index * 2000),
+        duration: ms(1000),
+      });
+    });
+    render(<TimelinePanel />);
+    return items.map((item) => screen.getByRole('button', { name: new RegExp(`^${item.name},`) }));
+  }
+
+  it('ctrl/cmd+click toggles clips into and out of the selection', () => {
+    const [first, second] = renderThreeClips();
+    if (!first || !second) throw new Error('Expected clip buttons.');
+
+    fireEvent.click(first, { ctrlKey: true });
+    fireEvent.click(second, { ctrlKey: true });
+    expect(useSessionStore.getState().session.selection.refs).toHaveLength(2);
+
+    fireEvent.click(first, { ctrlKey: true });
+    expect(useSessionStore.getState().session.selection.refs).toHaveLength(1);
+    expect(getSelectedClipId(useSessionStore.getState().session)).not.toBeNull();
+  });
+
+  it('shift+click range-selects between the anchor and the clicked clip', () => {
+    const [first, , third] = renderThreeClips();
+    if (!first || !third) throw new Error('Expected clip buttons.');
+
+    fireEvent.click(first);
+    fireEvent.click(third, { shiftKey: true });
+
+    expect(useSessionStore.getState().session.selection.refs).toHaveLength(3);
+  });
+
+  it('deletes every selected clip through the toolbar in one action', () => {
+    const [first, second] = renderThreeClips();
+    if (!first || !second) throw new Error('Expected clip buttons.');
+
+    fireEvent.click(first, { ctrlKey: true });
+    fireEvent.click(second, { ctrlKey: true });
+
+    fireEvent.click(screen.getByRole('button', { name: /Delete 2 selected clips/ }));
+
+    expect(
+      useProjectStore.getState().document.tracks.find((track) => track.kind === 'video')?.clips,
+    ).toHaveLength(1);
+    expect(useSessionStore.getState().session.selection.refs).toHaveLength(0);
+  });
+});
+
 describe('timeline transition cuts', () => {
   it('adds a default transition from the control between touching video clips', async () => {
     const first = createMediaItem({
@@ -134,10 +199,9 @@ describe('timeline transition cuts', () => {
       kind: 'crossfade',
       duration: 500,
     });
-    expect(useEditorStore.getState()).toMatchObject({
-      inspectorTab: 'effects',
-      selectedClipId: null,
-    });
-    expect(useEditorStore.getState().selectedTransitionId).not.toBeNull();
+    expect(useEditorStore.getState().inspectorTab).toBe('effects');
+    const session = useSessionStore.getState().session;
+    expect(getSelectedClipId(session)).toBeNull();
+    expect(getSelectedTransitionId(session)).not.toBeNull();
   });
 });

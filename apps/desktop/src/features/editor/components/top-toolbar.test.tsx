@@ -87,6 +87,29 @@ beforeEach(() => {
 });
 
 describe('toolbar menus', () => {
+  it('opens an accessible About dialog with developer and license details', () => {
+    const { container } = renderToolbar();
+    const help = menuByLabel(container, 'Help');
+    help.open = true;
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'About us…' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'VideoDip' });
+    expect(dialog).toHaveTextContent('Shantanu Udasi');
+    expect(screen.getByRole('link', { name: '@shantz1' })).toHaveAttribute(
+      'href',
+      'https://github.com/shantz1',
+    );
+    expect(dialog).toHaveTextContent('GNU Affero General Public License v3.0 only');
+    expect(screen.getByRole('link', { name: 'Read the complete license' })).toHaveAttribute(
+      'href',
+      'https://github.com/shantz1/VideoDip/blob/main/LICENSE',
+    );
+
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'VideoDip' })).not.toBeInTheDocument();
+  });
+
   it('closes the open menu when another menu opens', () => {
     const { container } = renderToolbar();
     const project = menuByLabel(container, 'Project');

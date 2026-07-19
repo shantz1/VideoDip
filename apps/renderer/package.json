@@ -8,12 +8,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./caption-fonts.css": "./assets/caption-fonts.generated.css"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "assets"
   ],
   "scripts": {
     "build": "tsup && tsc --emitDeclarationOnly",

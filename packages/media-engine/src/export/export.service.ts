@@ -11,10 +11,16 @@ const AUDIO_SAMPLE_RATE = 48_000;
 const FFMPEG_TRANSITIONS: Readonly<Record<string, string>> = {
   crossfade: 'fade',
   'dip-to-black': 'fadeblack',
+  'dip-to-white': 'fadewhite',
   'slide-left': 'slideleft',
   'slide-right': 'slideright',
+  'slide-up': 'slideup',
+  'slide-down': 'slidedown',
   'wipe-left': 'wipeleft',
   'wipe-right': 'wiperight',
+  'wipe-up': 'wipeup',
+  'wipe-down': 'wipedown',
+  'zoom-in': 'zoomin',
 };
 
 /**

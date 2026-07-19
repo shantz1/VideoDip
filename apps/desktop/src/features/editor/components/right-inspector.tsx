@@ -4,6 +4,8 @@ import { ms, normalized, type TrackId } from '@videodip/shared';
 import {
   CORE_TRANSITION_KINDS,
   DEFAULT_CLIP_TRANSFORM,
+  getSelectedClipId,
+  getSelectedTransitionId,
   type Clip,
   type ClipAnimationProperty,
   type ClipBlendMode,
@@ -17,6 +19,7 @@ import { MousePointerClick, SlidersHorizontal, Sparkles, Trash2 } from 'lucide-r
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditorStore, type InspectorTab } from '../editor.store';
 import { useProjectStore } from '../project.store';
+import { useSessionStore } from '../session.store';
 import { EmptyState } from './empty-state';
 import { SubtitleEditor } from './subtitle-editor';
 
@@ -29,13 +32,18 @@ const TABS: readonly { id: InspectorTab; label: string }[] = [
   { id: 'audio', label: 'Audio' },
 ];
 
+export interface RightInspectorProps {
+  /** Fill the workspace column instead of using the compact legacy width. */
+  readonly fillAvailableWidth?: boolean;
+}
+
 /** The selected clip inspector and its module-specific extension surfaces. */
-export function RightInspector() {
+export function RightInspector({ fillAvailableWidth = false }: RightInspectorProps = {}) {
   const tab = useEditorStore((state) => state.inspectorTab);
   const collapsed = useEditorStore((state) => state.inspectorCollapsed);
   const setTab = useEditorStore((state) => state.setInspectorTab);
-  const selectedClipId = useEditorStore((state) => state.selectedClipId);
-  const selectedTransitionId = useEditorStore((state) => state.selectedTransitionId);
+  const selectedClipId = useSessionStore((state) => getSelectedClipId(state.session));
+  const selectedTransitionId = useSessionStore((state) => getSelectedTransitionId(state.session));
   const timelineDocument = useProjectStore((state) => state.document);
   const selectedClip = selectedClipId
     ? timelineDocument.tracks
@@ -60,7 +68,10 @@ export function RightInspector() {
 
   return (
     <aside
-      className="border-border-subtle bg-surface-base flex h-full w-72 shrink-0 flex-col border-l"
+      className={cn(
+        'border-border-subtle bg-surface-base flex h-full shrink-0 flex-col border-l',
+        fillAvailableWidth ? 'w-full' : 'w-72',
+      )}
       aria-label="Inspector"
     >
       <div
@@ -134,17 +145,23 @@ export function RightInspector() {
 const TRANSITION_LABELS: Readonly<Record<CoreTransitionKind, string>> = {
   crossfade: 'Crossfade',
   'dip-to-black': 'Dip to black',
+  'dip-to-white': 'Dip to white',
   'slide-left': 'Slide left',
   'slide-right': 'Slide right',
+  'slide-up': 'Slide up',
+  'slide-down': 'Slide down',
   'wipe-left': 'Wipe left',
   'wipe-right': 'Wipe right',
+  'wipe-up': 'Wipe up',
+  'wipe-down': 'Wipe down',
+  'zoom-in': 'Zoom in',
 };
 
 function TransitionControls({ transition }: { readonly transition: ClipTransition }) {
   const document = useProjectStore((state) => state.document);
   const updateTransition = useProjectStore((state) => state.updateTransition);
   const removeTransition = useProjectStore((state) => state.removeTransition);
-  const selectTransition = useEditorStore((state) => state.selectTransition);
+  const clearSelection = useSessionStore((state) => state.clearSelection);
   const mediaItems = useEditorStore((state) => state.mediaItems);
   const [error, setError] = useState<string | null>(null);
   const clips = document.tracks.flatMap((track) => track.clips);
@@ -218,7 +235,7 @@ function TransitionControls({ transition }: { readonly transition: ClipTransitio
         leadingIcon={<Trash2 />}
         onClick={() => {
           removeTransition(transition.id);
-          selectTransition(null);
+          clearSelection();
         }}
       >
         Remove transition

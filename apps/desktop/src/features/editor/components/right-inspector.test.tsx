@@ -2,17 +2,21 @@ import userEvent from '@testing-library/user-event';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 import { ms, type AssetId } from '@videodip/shared';
+import { getSelectedTransitionId } from '@videodip/timeline';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useEditorStore } from '../editor.store';
 import { useProjectStore } from '../project.store';
+import { useSessionStore } from '../session.store';
 import { RightInspector } from './right-inspector';
 
 const initialEditor = useEditorStore.getState();
 const initialProject = useProjectStore.getState();
+const initialSession = useSessionStore.getState();
 
 beforeEach(() => {
   useEditorStore.setState(initialEditor, true);
   useProjectStore.setState(initialProject, true);
+  useSessionStore.setState(initialSession, true);
 });
 
 describe('transition inspector', () => {
@@ -43,7 +47,7 @@ describe('transition inspector', () => {
     if (!added.ok) throw new Error(added.error.message);
     const transition = added.value.transitions[0];
     if (!transition) throw new Error('Expected a transition.');
-    useEditorStore.getState().selectTransition(transition.id);
+    useSessionStore.getState().select({ type: 'transition', id: transition.id });
     useEditorStore.getState().setInspectorTab('effects');
 
     const user = userEvent.setup();
@@ -55,7 +59,7 @@ describe('transition inspector', () => {
 
     await user.click(screen.getByRole('button', { name: 'Remove transition' }));
     expect(useProjectStore.getState().document.transitions).toEqual([]);
-    expect(useEditorStore.getState().selectedTransitionId).toBeNull();
+    expect(getSelectedTransitionId(useSessionStore.getState().session)).toBeNull();
   });
 });
 
@@ -70,7 +74,7 @@ describe('continuous inspector controls', () => {
     if (!added.ok) throw new Error(added.error.message);
     const clip = added.value.tracks.find((track) => track.kind === 'video')?.clips[0];
     if (!clip) throw new Error('Expected a video clip.');
-    useEditorStore.getState().selectClip(clip.id);
+    useSessionStore.getState().select({ type: 'clip', id: clip.id });
     useEditorStore.getState().setInspectorTab('transform');
     const historyBeforeDrag = useProjectStore.getState().past.length;
 

@@ -1,6 +1,7 @@
 'use client';
 
 import type { AssetId } from '@videodip/shared';
+import { getSelectedSubtitleSegmentId } from '@videodip/timeline';
 import { Button, buttonVariants, cn } from '@videodip/ui';
 import { Download, HardDrive, Redo2, Sparkles, Undo2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -8,9 +9,11 @@ import { useShortcuts, type Shortcut } from '../../shortcuts/index';
 import { useEditorStore } from '../editor.store';
 import { useEditorHost } from '../host/editor-host';
 import type { RenderEngineStatus } from '../lib/render-video';
+import { useSessionStore } from '../session.store';
 import { useSubtitleStore } from '../subtitle.store';
 import { startNewProject as startNewProjectCommand } from '../lib/project-commands';
 import { useProjectStore } from '../project.store';
+import { AboutDialog } from './about-dialog';
 import { useProjectArchiveController } from './project-archive-controller';
 import { WorkspaceLayoutSelector } from './workspace-layout-selector';
 
@@ -39,7 +42,9 @@ export function TopToolbar() {
   const redo = useProjectStore((state) => state.redo);
   const canUndo = useProjectStore((state) => state.past.length > 0);
   const canRedo = useProjectStore((state) => state.future.length > 0);
-  const selectedSubtitleId = useEditorStore((state) => state.selectedSubtitleId);
+  const selectedSubtitleId = useSessionStore((state) =>
+    getSelectedSubtitleSegmentId(state.session),
+  );
   const subtitleCanUndo = useSubtitleStore((state) => state.past.length > 0);
   const subtitleCanRedo = useSubtitleStore((state) => state.future.length > 0);
   const runUndo = () => {
@@ -54,6 +59,7 @@ export function TopToolbar() {
   const hasRedo = canRedo || (selectedSubtitleId !== null && subtitleCanRedo);
   const [isImporting, setIsImporting] = useState(false);
   const [isChangingProject, setIsChangingProject] = useState(false);
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
 
   const startNewProject = () => {
@@ -133,87 +139,93 @@ export function TopToolbar() {
     },
     {
       label: 'Help',
-      items: [{ label: 'VideoDip 0.1.0', disabled: true }],
+      items: [
+        { label: 'About us…', action: () => setIsAboutOpen(true) },
+        { label: 'VideoDip 0.1.0', disabled: true },
+      ],
     },
   ];
 
   return (
-    <header
-      className={cn(
-        'vd-drag-region relative flex h-11 shrink-0 items-center gap-1 px-3',
-        'border-border-subtle bg-surface-raised border-b',
-      )}
-    >
-      <Logo />
-
-      <nav className="vd-no-drag ml-2 flex items-center gap-0.5" aria-label="Main menu">
-        {menus.map((menu) => (
-          <ToolbarMenu key={menu.label} menu={menu} />
-        ))}
-      </nav>
-
-      <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
-        <span className="text-text-secondary text-xs">{projectName ?? 'Untitled project'}</span>
-        {isDirty && (
-          <span
-            className="bg-warning size-1.5 rounded-full"
-            role="status"
-            aria-label="Unsaved changes"
-          />
+    <>
+      <header
+        className={cn(
+          'vd-drag-region relative flex h-11 shrink-0 items-center gap-1 px-3',
+          'border-border-subtle bg-surface-raised border-b',
         )}
-      </div>
+      >
+        <Logo />
 
-      <div className="vd-no-drag ml-auto flex items-center gap-1">
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Undo"
-          disabled={!hasUndo}
-          onClick={runUndo}
-          leadingIcon={<Undo2 />}
-        />
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Redo"
-          disabled={!hasRedo}
-          onClick={runRedo}
-          leadingIcon={<Redo2 />}
-        />
+        <nav className="vd-no-drag ml-2 flex items-center gap-0.5" aria-label="Main menu">
+          {menus.map((menu) => (
+            <ToolbarMenu key={menu.label} menu={menu} />
+          ))}
+        </nav>
 
-        <div className="bg-border-subtle mx-1 h-4 w-px" />
-
-        <WorkspaceLayoutSelector />
-
-        <Button
-          size="sm"
-          variant="ghost"
-          leadingIcon={<Sparkles />}
-          onClick={() => setActivePanel('ai')}
-        >
-          AI
-        </Button>
-        <ExportButton />
-
-        <div className="bg-border-subtle mx-1 h-4 w-px" />
-
-        <div
-          className="text-text-tertiary flex items-center gap-1.5 px-1 text-xs"
-          title="Projects and media stay on this machine"
-        >
-          <HardDrive className="size-3.5" aria-hidden="true" />
-          <span>Local</span>
+        <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
+          <span className="text-text-secondary text-xs">{projectName ?? 'Untitled project'}</span>
+          {isDirty && (
+            <span
+              className="bg-warning size-1.5 rounded-full"
+              role="status"
+              aria-label="Unsaved changes"
+            />
+          )}
         </div>
-      </div>
-      {commandError && (
-        <p
-          role="alert"
-          className="vd-no-drag bg-danger-subtle text-danger absolute top-full right-3 z-(--z-toast) mt-2 max-w-72 rounded-md px-3 py-2 text-xs shadow-lg"
-        >
-          {commandError}
-        </p>
-      )}
-    </header>
+
+        <div className="vd-no-drag ml-auto flex items-center gap-1">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Undo"
+            disabled={!hasUndo}
+            onClick={runUndo}
+            leadingIcon={<Undo2 />}
+          />
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Redo"
+            disabled={!hasRedo}
+            onClick={runRedo}
+            leadingIcon={<Redo2 />}
+          />
+
+          <div className="bg-border-subtle mx-1 h-4 w-px" />
+
+          <WorkspaceLayoutSelector />
+
+          <Button
+            size="sm"
+            variant="ghost"
+            leadingIcon={<Sparkles />}
+            onClick={() => setActivePanel('ai')}
+          >
+            AI
+          </Button>
+          <ExportButton />
+
+          <div className="bg-border-subtle mx-1 h-4 w-px" />
+
+          <div
+            className="text-text-tertiary flex items-center gap-1.5 px-1 text-xs"
+            title="Projects and media stay on this machine"
+          >
+            <HardDrive className="size-3.5" aria-hidden="true" />
+            <span>Local</span>
+          </div>
+        </div>
+        {commandError && (
+          <p
+            role="alert"
+            className="vd-no-drag bg-danger-subtle text-danger absolute top-full right-3 z-(--z-toast) mt-2 max-w-72 rounded-md px-3 py-2 text-xs shadow-lg"
+          >
+            {commandError}
+          </p>
+        )}
+      </header>
+      <AboutDialog isOpen={isAboutOpen} onClose={() => setIsAboutOpen(false)} />
+    </>
   );
 }
 

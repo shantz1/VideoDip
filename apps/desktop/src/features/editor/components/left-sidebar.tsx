@@ -24,11 +24,15 @@ import {
   FolderOpen,
   Image,
   LayoutTemplate,
+  LayoutGrid,
+  List,
   Music,
   Package,
   Pencil,
+  Play,
   Plus,
   Settings,
+  Shuffle,
   Sparkles,
   Trash2,
   Type,
@@ -50,6 +54,7 @@ import { useProjectStore } from '../project.store';
 import { useSubtitleStore } from '../subtitle.store';
 import { EmptyState } from './empty-state';
 import { useProjectArchiveController } from './project-archive-controller';
+import { SourceVideoThumbnail } from './source-video-thumbnail';
 
 /**
  * Fallback only for containers the platform decoder cannot inspect yet.
@@ -91,7 +96,7 @@ export function LeftSidebar() {
   const active = PANELS.find((p) => p.id === activePanel);
 
   return (
-    <div className="flex h-full shrink-0">
+    <div className="flex h-full w-full min-w-0 shrink-0">
       <nav
         className={cn(
           'flex w-12 flex-col items-center gap-0.5 py-2',
@@ -111,7 +116,9 @@ export function LeftSidebar() {
 
       {!collapsed && (
         <aside
-          className={cn('border-border-subtle bg-surface-base flex w-60 flex-col border-r')}
+          className={cn(
+            'border-border-subtle bg-surface-base flex min-w-0 flex-1 flex-col border-r',
+          )}
           aria-label={active?.label}
         >
           <div className="flex h-9 shrink-0 items-center px-3">
@@ -488,7 +495,14 @@ function languageName(code: string): string {
   return LANGUAGE_NAMES.of(code) ?? code.toUpperCase();
 }
 
-const CAPTION_TEMPLATES = [
+/**
+ * Built-in subtitle style templates. Every field is data validated by
+ * `@videodip/template-engine`'s Zod schema and resolves onto
+ * `SubtitleDocument.defaultStyle` — see `TemplatesPanel.apply` below. Fonts
+ * reference the bundled caption font pack (`@videodip/renderer`'s
+ * `caption-fonts.css`); everything renders identically offline.
+ */
+export const CAPTION_TEMPLATES = [
   {
     version: 1,
     id: 'builtin.caption-clean',
@@ -516,14 +530,174 @@ const CAPTION_TEMPLATES = [
     parameters: [],
     payload: { fontSize: 64, fontWeight: 700, positionY: 0.78 },
   },
+  {
+    version: 1,
+    id: 'builtin.caption-bold-impact',
+    name: 'Bold Impact',
+    description: 'Huge yellow display type with a thick outline and a bounce-in.',
+    surface: 'subtitle',
+    parameters: [],
+    payload: {
+      fontFamily: 'Anton',
+      fontSize: 72,
+      fontWeight: 400,
+      foreground: '#ffde59',
+      backgroundEnabled: false,
+      strokeColor: '#000000',
+      strokeWidth: 4,
+      positionY: 0.72,
+      animation: 'bounce',
+    },
+  },
+  {
+    version: 1,
+    id: 'builtin.caption-neon-pop',
+    name: 'Neon Pop',
+    description: 'Glowing cyan-on-magenta condensed type with a quick pop-in.',
+    surface: 'subtitle',
+    parameters: [],
+    payload: {
+      fontFamily: 'Oswald',
+      fontSize: 56,
+      fontWeight: 700,
+      foreground: '#00f0ff',
+      backgroundEnabled: false,
+      shadowColor: '#ff00e5',
+      shadowBlur: 20,
+      shadowOpacity: 0.9,
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      animation: 'pop',
+    },
+  },
+  {
+    version: 1,
+    id: 'builtin.caption-boxed',
+    name: 'Boxed',
+    description: 'Bold white type on a solid black card — high-contrast and legible.',
+    surface: 'subtitle',
+    parameters: [],
+    payload: {
+      fontFamily: 'Montserrat',
+      fontSize: 48,
+      fontWeight: 700,
+      foreground: '#ffffff',
+      backgroundEnabled: true,
+      background: '#000000',
+      backgroundOpacity: 0.85,
+      padding: 16,
+      borderRadius: 10,
+      animation: 'fade',
+    },
+  },
+  {
+    version: 1,
+    id: 'builtin.caption-elegant-serif',
+    name: 'Elegant Serif',
+    description: 'Understated serif captions with a soft shadow — a cinematic, editorial feel.',
+    surface: 'subtitle',
+    parameters: [],
+    payload: {
+      fontFamily: 'Playfair Display',
+      fontSize: 42,
+      fontWeight: 700,
+      foreground: '#f5f1e8',
+      backgroundEnabled: false,
+      shadowColor: '#000000',
+      shadowBlur: 8,
+      shadowOpacity: 0.5,
+      shadowOffsetX: 0,
+      shadowOffsetY: 2,
+      positionY: 0.85,
+      animation: 'slide-up',
+    },
+  },
+  {
+    version: 1,
+    id: 'builtin.caption-handwritten',
+    name: 'Handwritten',
+    description: 'A playful script face with a violet outline, sliding in from the side.',
+    surface: 'subtitle',
+    parameters: [],
+    payload: {
+      fontFamily: 'Caveat',
+      fontSize: 64,
+      fontWeight: 700,
+      foreground: '#ffffff',
+      backgroundEnabled: false,
+      strokeColor: '#7c3aed',
+      strokeWidth: 2,
+      animation: 'slide-left',
+    },
+  },
+  {
+    version: 1,
+    id: 'builtin.caption-marker',
+    name: 'Marker Bold',
+    description: 'A tilted, orange marker-style scrawl with an energetic bounce.',
+    surface: 'subtitle',
+    parameters: [],
+    payload: {
+      fontFamily: 'Permanent Marker',
+      fontSize: 52,
+      fontWeight: 400,
+      foreground: '#ff5a36',
+      backgroundEnabled: false,
+      rotation: -3,
+      animation: 'bounce',
+    },
+  },
+  {
+    version: 1,
+    id: 'builtin.caption-minimal-white',
+    name: 'Minimal White',
+    description: 'Small, quiet white captions with a soft drop shadow — stays out of the way.',
+    surface: 'subtitle',
+    parameters: [],
+    payload: {
+      fontFamily: 'Poppins',
+      fontSize: 40,
+      fontWeight: 600,
+      foreground: '#ffffff',
+      backgroundEnabled: false,
+      shadowColor: '#000000',
+      shadowBlur: 6,
+      shadowOpacity: 0.6,
+      shadowOffsetX: 0,
+      shadowOffsetY: 2,
+      positionY: 0.9,
+      animation: 'fade',
+    },
+  },
+  {
+    version: 1,
+    id: 'builtin.caption-big-bold-center',
+    name: 'Big Bold Center',
+    description: 'Tall condensed display type, centered on screen, with a punchy scale-in.',
+    surface: 'subtitle',
+    parameters: [],
+    payload: {
+      fontFamily: 'Bebas Neue',
+      fontSize: 80,
+      fontWeight: 400,
+      foreground: '#ffffff',
+      backgroundEnabled: false,
+      strokeColor: '#000000',
+      strokeWidth: 3,
+      letterSpacing: 2,
+      positionY: 0.5,
+      animation: 'pop',
+    },
+  },
 ] as const;
 
-function TemplatesPanel() {
+export function TemplatesPanel() {
   const currentStyle = useSubtitleStore((state) => state.document.defaultStyle);
   const setDefaultStyle = useSubtitleStore((state) => state.setDefaultStyle);
   const [error, setError] = useState<string | null>(null);
+  const [lastAppliedId, setLastAppliedId] = useState<string | null>(null);
 
-  const apply = (source: unknown) => {
+  const apply = (source: (typeof CAPTION_TEMPLATES)[number]) => {
     const parsed = parseTemplate(source);
     if (!parsed.ok) {
       setError(parsed.error.recovery);
@@ -541,7 +715,17 @@ function TemplatesPanel() {
     }
     const payload = resolved.value as Partial<SubtitleStyle>;
     setDefaultStyle({ ...currentStyle, ...payload });
+    setLastAppliedId(source.id);
     setError(null);
+  };
+
+  // Picks a different template than the one just applied, so repeated clicks
+  // always visibly change the look instead of occasionally no-op'ing.
+  const applyAuto = () => {
+    const candidates = CAPTION_TEMPLATES.filter((template) => template.id !== lastAppliedId);
+    const pool = candidates.length > 0 ? candidates : CAPTION_TEMPLATES;
+    const choice = pool[Math.floor(Math.random() * pool.length)];
+    if (choice) apply(choice);
   };
 
   return (
@@ -550,6 +734,9 @@ function TemplatesPanel() {
         Templates are validated JSON data and affect every cue that has not overridden the style.
       </p>
       {error && <PanelErrorNotice message={error} />}
+      <Button size="sm" variant="secondary" leadingIcon={<Shuffle />} onClick={applyAuto}>
+        Auto
+      </Button>
       {CAPTION_TEMPLATES.map((template) => (
         <button
           key={template.id}
@@ -924,15 +1111,17 @@ function ProjectsPanel() {
 }
 
 /**
- * The Media panel's real behaviour: opens the native file picker, lists what
- * has been imported, and places a clip on the video track at the playhead.
- * Path + name only — no thumbnails or duration until `media-engine` gains
- * real probing, which is also why every added clip is the same placeholder
- * length.
+ * Imports and auditions source media, presents generated or decoder-backed
+ * previews in square-grid and compact-list views, and places clips on the
+ * matching timeline track at the first free position from the playhead.
  */
-function MediaPanel() {
+export function MediaPanel() {
   const { getMediaArtifact, importMedia, resolveMediaSource } = useEditorHost();
   const mediaItems = useEditorStore((s) => s.mediaItems);
+  const mediaLibraryView = useEditorStore((s) => s.mediaLibraryView);
+  const setMediaLibraryView = useEditorStore((s) => s.setMediaLibraryView);
+  const mediaPreviewAssetId = useEditorStore((s) => s.mediaPreviewAssetId);
+  const setMediaPreview = useEditorStore((s) => s.setMediaPreview);
   const addMediaItems = useEditorStore((s) => s.addMediaItems);
   const playhead = useEditorStore((s) => s.playhead);
   const timelineDocument = useProjectStore((s) => s.document);
@@ -942,6 +1131,9 @@ function MediaPanel() {
   const [isImporting, setIsImporting] = useState(false);
   const [artifactStates, setArtifactStates] = useState<
     Readonly<Record<string, MediaArtifactViewState>>
+  >({});
+  const [sourcePreviewAvailability, setSourcePreviewAvailability] = useState<
+    Readonly<Record<string, boolean>>
   >({});
 
   useEffect(() => {
@@ -1031,28 +1223,133 @@ function MediaPanel() {
     <div className="flex flex-col gap-2">
       {importError && <PanelErrorNotice message={importError} />}
       {timelineError && <PanelErrorNotice message={timelineError} />}
-      <button
-        type="button"
-        onClick={handleImport}
-        aria-busy={isImporting || undefined}
-        aria-disabled={isImporting || undefined}
-        className={cn(
-          'flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs',
-          'text-text-secondary transition-colors duration-(--duration-fast)',
-          'hover:bg-surface-hover hover:text-text-primary',
-          'focus-visible:outline-2 focus-visible:outline-offset-[-2px]',
-          'focus-visible:outline-(--color-border-focus)',
-        )}
-      >
-        <FolderOpen className="size-3.5" aria-hidden="true" />
-        Import more
-      </button>
+      <div className="flex items-center justify-between gap-2">
+        <div
+          role="radiogroup"
+          aria-label="Media library view"
+          className="border-border-subtle bg-surface-inset flex items-center rounded-md border p-0.5"
+        >
+          <button
+            type="button"
+            role="radio"
+            aria-checked={mediaLibraryView === 'grid'}
+            aria-label="Grid view"
+            title="Grid view"
+            onClick={() => setMediaLibraryView('grid')}
+            className={cn(
+              'grid size-6 place-items-center rounded-sm',
+              'focus-visible:outline-2 focus-visible:outline-(--color-border-focus)',
+              mediaLibraryView === 'grid'
+                ? 'bg-surface-raised text-text-primary shadow-sm'
+                : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary',
+            )}
+          >
+            <LayoutGrid className="size-3.5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={mediaLibraryView === 'list'}
+            aria-label="List view"
+            title="List view"
+            onClick={() => setMediaLibraryView('list')}
+            className={cn(
+              'grid size-6 place-items-center rounded-sm',
+              'focus-visible:outline-2 focus-visible:outline-(--color-border-focus)',
+              mediaLibraryView === 'list'
+                ? 'bg-surface-raised text-text-primary shadow-sm'
+                : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary',
+            )}
+          >
+            <List className="size-3.5" aria-hidden="true" />
+          </button>
+        </div>
+        <Button
+          size="xs"
+          variant="outline"
+          leadingIcon={<FolderOpen />}
+          loading={isImporting}
+          onClick={handleImport}
+        >
+          Import
+        </Button>
+      </div>
 
-      <ul className="flex flex-col gap-0.5" aria-label="Imported media">
+      <ul
+        className={cn(
+          mediaLibraryView === 'grid' ? 'grid grid-cols-2 gap-2' : 'flex flex-col gap-0.5',
+        )}
+        aria-label="Imported media"
+        data-media-library-view={mediaLibraryView}
+      >
         {mediaItems.map((item) => {
-          const ItemIcon = item.kind === 'audio' ? Music : Video;
           const artifactState = artifactStates[item.id];
-          return (
+          const onSourcePreviewAvailability = (isAvailable: boolean) =>
+            setSourcePreviewAvailability((current) =>
+              current[item.id] === isAvailable ? current : { ...current, [item.id]: isAvailable },
+            );
+          return mediaLibraryView === 'grid' ? (
+            <li
+              key={item.id}
+              className={cn(
+                'group border-border-subtle min-w-0 overflow-hidden rounded-lg border',
+                'bg-surface-raised hover:border-border-default text-text-primary',
+              )}
+              title={String(item.locator)}
+            >
+              <div
+                className="relative aspect-square overflow-hidden"
+                data-media-thumbnail-shape="square"
+              >
+                <MediaItemPreview
+                  item={item}
+                  state={artifactState}
+                  source={resolveMediaSource(
+                    artifactState?.kind === 'ready' ? artifactState.artifact.locator : item.locator,
+                  )}
+                  layout="grid"
+                  onSourcePreviewAvailability={onSourcePreviewAvailability}
+                />
+                {item.duration !== null && (
+                  <span className="bg-surface-overlay text-text-primary text-2xs absolute right-1 bottom-1 rounded-sm px-1 py-0.5 shadow-sm">
+                    {formatMediaDuration(item.duration)}
+                  </span>
+                )}
+                <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+                  <Button
+                    size="icon-sm"
+                    variant={mediaPreviewAssetId === item.id ? 'primary' : 'secondary'}
+                    aria-label={`Preview ${item.name}`}
+                    aria-pressed={mediaPreviewAssetId === item.id}
+                    className="shadow-sm"
+                    onClick={() =>
+                      setMediaPreview(mediaPreviewAssetId === item.id ? null : item.id)
+                    }
+                    leadingIcon={<Play />}
+                  />
+                  <Button
+                    size="icon-sm"
+                    variant="secondary"
+                    aria-label={`Add ${item.name} to the timeline`}
+                    className="shadow-sm"
+                    onClick={() => handleAddToTimeline(item)}
+                    leadingIcon={<Plus />}
+                  />
+                </div>
+              </div>
+              <div className="min-w-0 p-2">
+                <p className="truncate text-xs font-medium" title={item.name}>
+                  {item.name}
+                </p>
+                <p className="text-2xs text-text-tertiary mt-0.5 capitalize">{item.kind}</p>
+                <MediaArtifactStatus
+                  state={artifactState}
+                  mediaKind={item.kind}
+                  hasSourcePreview={sourcePreviewAvailability[item.id] === true}
+                />
+              </div>
+            </li>
+          ) : (
             <li
               key={item.id}
               className={cn(
@@ -1061,42 +1358,98 @@ function MediaPanel() {
               )}
               title={String(item.locator)}
             >
-              {artifactState?.kind === 'ready' && artifactState.artifact.kind === 'thumbnail' ? (
-                <img
-                  src={resolveMediaSource(artifactState.artifact.locator)}
-                  alt=""
-                  className="bg-surface-inset h-9 w-14 shrink-0 rounded-sm object-cover"
-                />
-              ) : artifactState?.kind === 'ready' && artifactState.artifact.kind === 'waveform' ? (
-                <WaveformPreview
-                  source={resolveMediaSource(artifactState.artifact.locator)}
-                  label={`${item.name} waveform`}
-                />
-              ) : (
-                <span className="bg-surface-inset flex h-9 w-14 shrink-0 items-center justify-center rounded-sm">
-                  <ItemIcon className="text-text-tertiary size-4" aria-hidden="true" />
-                </span>
-              )}
+              <MediaItemPreview
+                item={item}
+                state={artifactState}
+                source={resolveMediaSource(
+                  artifactState?.kind === 'ready' ? artifactState.artifact.locator : item.locator,
+                )}
+                layout="list"
+                onSourcePreviewAvailability={onSourcePreviewAvailability}
+              />
               <span className="min-w-0 flex-1 truncate">
                 {item.name}
                 <span className="text-2xs text-text-tertiary block">
+                  <span className="capitalize">{item.kind}</span>
+                  {' · '}
                   {item.duration === null ? 'Duration unknown' : formatMediaDuration(item.duration)}
                 </span>
-                <MediaArtifactStatus state={artifactState} />
+                <MediaArtifactStatus
+                  state={artifactState}
+                  mediaKind={item.kind}
+                  hasSourcePreview={sourcePreviewAvailability[item.id] === true}
+                />
               </span>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label={`Add ${item.name} to the timeline`}
-                className="shrink-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
-                onClick={() => handleAddToTimeline(item)}
-                leadingIcon={<Plus />}
-              />
+              <div className="flex shrink-0 items-center">
+                <Button
+                  size="icon-sm"
+                  variant={mediaPreviewAssetId === item.id ? 'secondary' : 'ghost'}
+                  aria-label={`Preview ${item.name}`}
+                  aria-pressed={mediaPreviewAssetId === item.id}
+                  className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+                  onClick={() => setMediaPreview(mediaPreviewAssetId === item.id ? null : item.id)}
+                  leadingIcon={<Play />}
+                />
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={`Add ${item.name} to the timeline`}
+                  className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+                  onClick={() => handleAddToTimeline(item)}
+                  leadingIcon={<Plus />}
+                />
+              </div>
             </li>
           );
         })}
       </ul>
     </div>
+  );
+}
+
+function MediaItemPreview({
+  item,
+  state,
+  source,
+  layout,
+  onSourcePreviewAvailability,
+}: {
+  readonly item: MediaItem;
+  readonly state: MediaArtifactViewState | undefined;
+  readonly source: string;
+  readonly layout: 'grid' | 'list';
+  readonly onSourcePreviewAvailability: (isAvailable: boolean) => void;
+}) {
+  const previewClassName =
+    layout === 'grid'
+      ? 'size-full rounded-none object-cover'
+      : 'h-9 w-14 shrink-0 rounded-sm object-cover';
+  if (state?.kind === 'ready' && state.artifact.kind === 'thumbnail') {
+    return <img src={source} alt="" className={cn('bg-surface-inset', previewClassName)} />;
+  }
+  if (state?.kind === 'ready' && state.artifact.kind === 'waveform') {
+    return (
+      <WaveformPreview
+        source={source}
+        label={`${item.name} waveform`}
+        className={previewClassName}
+      />
+    );
+  }
+  if (item.kind === 'video') {
+    return (
+      <SourceVideoThumbnail
+        source={source}
+        className={previewClassName}
+        onFrameAvailabilityChange={onSourcePreviewAvailability}
+      />
+    );
+  }
+  const ItemIcon = item.kind === 'audio' ? Music : Video;
+  return (
+    <span className={cn('bg-surface-inset flex items-center justify-center', previewClassName)}>
+      <ItemIcon className="text-text-tertiary size-4" aria-hidden="true" />
+    </span>
   );
 }
 
@@ -1124,7 +1477,15 @@ function mediaArtifactRequest(item: MediaItem) {
   };
 }
 
-function MediaArtifactStatus({ state }: { readonly state: MediaArtifactViewState | undefined }) {
+function MediaArtifactStatus({
+  state,
+  mediaKind,
+  hasSourcePreview,
+}: {
+  readonly state: MediaArtifactViewState | undefined;
+  readonly mediaKind: MediaItem['kind'];
+  readonly hasSourcePreview: boolean;
+}) {
   if (state === undefined) return null;
   if (state.kind === 'loading') {
     return (
@@ -1135,8 +1496,18 @@ function MediaArtifactStatus({ state }: { readonly state: MediaArtifactViewState
   }
   if (state.kind === 'error') {
     return (
-      <span className="text-2xs text-danger block truncate" title={state.recovery}>
-        Preview unavailable
+      <span
+        className={cn(
+          'text-2xs block truncate',
+          hasSourcePreview ? 'text-text-tertiary' : 'text-danger',
+        )}
+        title={state.recovery}
+      >
+        {hasSourcePreview
+          ? 'Source preview'
+          : mediaKind === 'video'
+            ? 'Generated thumbnail unavailable'
+            : 'Waveform unavailable'}
       </span>
     );
   }
@@ -1147,7 +1518,15 @@ function MediaArtifactStatus({ state }: { readonly state: MediaArtifactViewState
   );
 }
 
-function WaveformPreview({ source, label }: { readonly source: string; readonly label: string }) {
+function WaveformPreview({
+  source,
+  label,
+  className,
+}: {
+  readonly source: string;
+  readonly label: string;
+  readonly className?: string;
+}) {
   const [peaks, setPeaks] = useState<readonly number[] | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -1163,7 +1542,12 @@ function WaveformPreview({ source, label }: { readonly source: string; readonly 
 
   if (peaks === null) {
     return (
-      <span className="bg-surface-inset flex h-9 w-14 shrink-0 items-center justify-center rounded-sm">
+      <span
+        className={cn(
+          'bg-surface-inset flex h-9 w-14 shrink-0 items-center justify-center rounded-sm',
+          className,
+        )}
+      >
         <Music className="text-text-tertiary size-4" aria-hidden="true" />
       </span>
     );
@@ -1180,7 +1564,7 @@ function WaveformPreview({ source, label }: { readonly source: string; readonly 
       role="img"
       aria-label={label}
       preserveAspectRatio="none"
-      className="bg-surface-inset text-track-audio h-9 w-14 shrink-0 rounded-sm"
+      className={cn('bg-surface-inset text-track-audio h-9 w-14 shrink-0 rounded-sm', className)}
     >
       <polyline points={points} fill="none" stroke="currentColor" strokeWidth="4" />
       <polyline

@@ -15,6 +15,7 @@ import {
   commitTimelineTransaction,
   createTimeline,
   createTimelineHistory,
+  createTimelineRuntimeIndex,
   createTimelineTransaction,
   createTrack,
   getDuration,
@@ -38,6 +39,7 @@ import {
   type ClipAudioSettings,
   type TimelineDocument,
   type TimelineHistory,
+  type TimelineOperation,
   type TimelineTransaction,
   type TrimEdge,
   type UpdateClipPropertiesInput,
@@ -45,6 +47,7 @@ import {
 } from '@videodip/timeline';
 import { create } from 'zustand';
 import { useEditorStore } from './editor.store';
+import { useSessionStore } from './session.store';
 import { useSubtitleStore } from './subtitle.store';
 
 /**
@@ -66,6 +69,8 @@ export interface ProjectState {
   readonly removeTrack: (trackId: TrackId) => Result<TimelineDocument>;
   readonly reorderTrack: (trackId: TrackId, index: number) => Result<TimelineDocument>;
   readonly removeClip: (clipId: ClipId) => void;
+  /** Removes every listed clip in a single transaction — one undo entry for the whole set. */
+  readonly removeClips: (clipIds: readonly ClipId[]) => void;
   readonly removeTransition: (transitionId: TransitionId) => void;
   readonly moveClip: (
     clipId: ClipId,
@@ -109,89 +114,67 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   past: [],
   future: [],
 
-  addClip: (input) => {
-    const result = addClipOp(get().document, input);
-    if (result.ok) applyDocument(result.value, 'Add clip');
-    return result;
-  },
+  addClip: (input) => applyTimelineOperation('Add clip', (document) => addClipOp(document, input)),
 
-  addTransition: (input) => {
-    const result = addTransitionOp(get().document, input);
-    if (result.ok) applyDocument(result.value, 'Add transition');
-    return result;
-  },
+  addTransition: (input) =>
+    applyTimelineOperation('Add transition', (document) => addTransitionOp(document, input)),
 
-  addTrack: (input, index) => {
-    const result = addTrackOp(get().document, input, index);
-    if (result.ok) applyDocument(result.value, 'Add track');
-    return result;
-  },
+  addTrack: (input, index) =>
+    applyTimelineOperation('Add track', (document) => addTrackOp(document, input, index)),
 
-  removeTrack: (trackId) => {
-    const result = removeTrackOp(get().document, trackId);
-    if (result.ok) applyDocument(result.value, 'Remove track');
-    return result;
-  },
+  removeTrack: (trackId) =>
+    applyTimelineOperation('Remove track', (document) => removeTrackOp(document, trackId)),
 
-  reorderTrack: (trackId, index) => {
-    const result = reorderTrackOp(get().document, trackId, index);
-    if (result.ok) applyDocument(result.value, 'Reorder track');
-    return result;
-  },
+  reorderTrack: (trackId, index) =>
+    applyTimelineOperation('Reorder track', (document) => reorderTrackOp(document, trackId, index)),
 
   removeClip: (clipId) => {
-    const before = get().document;
-    const next = removeClipOp(before, clipId);
-    if (next !== before) applyDocument(next, 'Remove clip');
+    applyTimelineOperation('Remove clip', (document) => ok(removeClipOp(document, clipId)));
+  },
+
+  removeClips: (clipIds) => {
+    if (clipIds.length === 0) return;
+    applyTimelineOperation('Remove clips', (document) =>
+      ok(clipIds.reduce((current, clipId) => removeClipOp(current, clipId), document)),
+    );
   },
 
   removeTransition: (transitionId) => {
-    const before = get().document;
-    const next = removeTransitionOp(before, transitionId);
-    if (next !== before) applyDocument(next, 'Remove transition');
+    applyTimelineOperation('Remove transition', (document) =>
+      ok(removeTransitionOp(document, transitionId)),
+    );
   },
 
-  moveClip: (clipId, newStart, newTrackId) => {
-    const result = moveClipOp(get().document, clipId, newStart, newTrackId);
-    if (result.ok) applyDocument(result.value, 'Move clip');
-    return result;
-  },
+  moveClip: (clipId, newStart, newTrackId) =>
+    applyTimelineOperation('Move clip', (document) =>
+      moveClipOp(document, clipId, newStart, newTrackId),
+    ),
 
-  trimClip: (clipId, edge, newTime) => {
-    const result = trimClipOp(get().document, clipId, edge, newTime);
-    if (result.ok) applyDocument(result.value, 'Trim clip');
-    return result;
-  },
+  trimClip: (clipId, edge, newTime) =>
+    applyTimelineOperation('Trim clip', (document) => trimClipOp(document, clipId, edge, newTime)),
 
-  splitClip: (clipId, atTime) => {
-    const result = splitClipOp(get().document, clipId, atTime);
-    if (result.ok) applyDocument(result.value, 'Split clip');
-    return result;
-  },
+  splitClip: (clipId, atTime) =>
+    applyTimelineOperation('Split clip', (document) => splitClipOp(document, clipId, atTime)),
 
-  updateClipProperties: (clipId, patch) => {
-    const result = updateClipPropertiesOp(get().document, clipId, patch);
-    if (result.ok) applyDocument(result.value, 'Update clip properties');
-    return result;
-  },
+  updateClipProperties: (clipId, patch) =>
+    applyTimelineOperation('Update clip properties', (document) =>
+      updateClipPropertiesOp(document, clipId, patch),
+    ),
 
-  setClipAnimation: (clipId, animation) => {
-    const result = setClipAnimationOp(get().document, clipId, animation);
-    if (result.ok) applyDocument(result.value, 'Set clip animation');
-    return result;
-  },
+  setClipAnimation: (clipId, animation) =>
+    applyTimelineOperation('Set clip animation', (document) =>
+      setClipAnimationOp(document, clipId, animation),
+    ),
 
-  updateClipAudio: (clipId, patch) => {
-    const result = updateClipAudioOp(get().document, clipId, patch);
-    if (result.ok) applyDocument(result.value, 'Update clip audio');
-    return result;
-  },
+  updateClipAudio: (clipId, patch) =>
+    applyTimelineOperation('Update clip audio', (document) =>
+      updateClipAudioOp(document, clipId, patch),
+    ),
 
-  updateTransition: (transitionId, patch) => {
-    const result = updateTransitionOp(get().document, transitionId, patch);
-    if (result.ok) applyDocument(result.value, 'Update transition');
-    return result;
-  },
+  updateTransition: (transitionId, patch) =>
+    applyTimelineOperation('Update transition', (document) =>
+      updateTransitionOp(document, transitionId, patch),
+    ),
 
   undo: () => {
     const state = get();
@@ -212,11 +195,13 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   reset: () => {
     const document = createEditorTimeline();
     set(requireTimelineHistory(document));
+    useSessionStore.getState().resetSession();
     syncEditor(document);
   },
 
   load: (document) => {
     set(requireTimelineHistory(document));
+    useSessionStore.getState().resetSession();
     syncEditor(document, false);
   },
 }));
@@ -230,17 +215,22 @@ function createEditorTimeline(): TimelineDocument {
   ]);
 }
 
-function applyDocument(document: TimelineDocument, label: string): void {
+function applyTimelineOperation(
+  label: string,
+  operation: TimelineOperation,
+): Result<TimelineDocument> {
   const state = useProjectStore.getState();
   const transaction = createTimelineTransaction(state.document, {
     label,
-    operations: [() => ok(document)],
+    operations: [operation],
   });
-  if (!transaction.ok) return;
+  if (!transaction.ok) return transaction;
   const committed = commitTimelineTransaction(state, transaction.value);
-  if (!committed.ok || committed.value === state) return;
+  if (!committed.ok) return committed;
+  if (committed.value === state) return ok(state.document);
   setProjectState(committed.value);
-  syncEditor(document);
+  syncEditor(committed.value.document);
+  return ok(committed.value.document);
 }
 
 function setProjectState(state: TimelineHistory): void {
@@ -255,11 +245,12 @@ function requireTimelineHistory(document: TimelineDocument): TimelineHistory {
 
 function syncEditor(document: TimelineDocument, dirty = true): void {
   const editor = useEditorStore.getState();
-  if (
-    editor.selectedTransitionId !== null &&
-    !document.transitions.some((transition) => transition.id === editor.selectedTransitionId)
-  ) {
-    editor.selectTransition(null);
+  const index = createTimelineRuntimeIndex(document);
+  if (index.ok) {
+    useSessionStore.getState().reconcile(index.value, {
+      hasSubtitleSegment: (id) =>
+        useSubtitleStore.getState().document.segments.some((segment) => segment.id === id),
+    });
   }
   editor.setProjectDuration(
     Math.max(

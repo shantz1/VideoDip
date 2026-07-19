@@ -43,10 +43,8 @@ export function StageSplitter() {
       tabIndex={0}
       title="Drag to resize the video stage. Double-click to reset."
       className={cn(
-        'absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize',
-        'transition-colors duration-(--duration-fast)',
-        'hover:bg-accent/40 active:bg-accent/60',
-        'focus-visible:bg-accent/40 focus-visible:outline-none',
+        'group absolute inset-y-0 -left-1.5 z-20 w-3 cursor-col-resize',
+        'focus-visible:outline-none',
       )}
       onPointerDown={(event) => {
         event.preventDefault();
@@ -71,6 +69,24 @@ export function StageSplitter() {
         // The splitter sits on the pane's left edge: left grows the pane.
         setStagePaneWidth(current + (event.key === 'ArrowLeft' ? step : -step));
       }}
-    />
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          'bg-border-default absolute inset-y-0 left-1/2 w-px -translate-x-1/2',
+          'transition-colors duration-(--duration-fast)',
+          'group-hover:bg-accent group-active:bg-accent group-focus-visible:bg-accent',
+        )}
+      />
+      <span
+        aria-hidden="true"
+        className={cn(
+          'border-border-default bg-surface-raised absolute top-1/2 left-1/2',
+          'h-10 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border',
+          'transition-colors duration-(--duration-fast)',
+          'group-hover:border-accent group-active:border-accent group-focus-visible:border-accent',
+        )}
+      />
+    </div>
   );
 }

@@ -2,12 +2,19 @@
 
 import { resolveSubtitleStyle } from '@videodip/subtitle-engine';
 import { ms } from '@videodip/shared';
+import {
+  getSelectedClipId,
+  getSelectedSubtitleSegmentId,
+  getSelectedTransitionId,
+  getSessionSelectedClipIds,
+} from '@videodip/timeline';
 import { useMemo } from 'react';
 import { CommandPalette, useShortcuts, type Shortcut } from '../../shortcuts/index';
 import { useEditorStore } from '../editor.store';
-import { workspaceGridTemplate } from '../lib/workspace-layout';
+import { workspaceGridTemplate, workspaceTimelineRows } from '../lib/workspace-layout';
 import { nudgeSubtitlePosition } from '../lib/subtitle-preview-position';
 import { useProjectStore } from '../project.store';
+import { useSessionStore } from '../session.store';
 import { useSubtitleStore } from '../subtitle.store';
 import { LeftSidebar } from './left-sidebar';
 import { PreviewCanvas } from './preview-canvas';
@@ -19,8 +26,10 @@ import { ProjectPersistenceController } from './project-persistence-controller';
 import { RightInspector } from './right-inspector';
 import { StageSplitter } from './stage-splitter';
 import { TimelinePanel } from './timeline-panel';
+import { TimelinePaneSplitter } from './timeline-pane-splitter';
 import { TopToolbar } from './top-toolbar';
 import { UpdateBanner } from './update-banner';
+import { WorkspacePaneSplitter } from './workspace-pane-splitter';
 
 /** How far the arrow keys move the playhead. Shift jumps a second. */
 const NUDGE_SMALL = ms(100);
@@ -50,27 +59,31 @@ function EditorShellContent() {
   const nudge = useEditorStore((s) => s.nudge);
   const seek = useEditorStore((s) => s.seek);
   const duration = useEditorStore((s) => s.duration);
-  const zoomIn = useEditorStore((s) => s.zoomIn);
-  const zoomOut = useEditorStore((s) => s.zoomOut);
-  const toggleSnap = useEditorStore((s) => s.toggleSnap);
+  const zoomIn = useSessionStore((s) => s.zoomIn);
+  const zoomOut = useSessionStore((s) => s.zoomOut);
+  const toggleSnap = useSessionStore((s) => s.toggleSnapping);
   const toggleSidebar = useEditorStore((s) => s.toggleSidebar);
   const toggleInspector = useEditorStore((s) => s.toggleInspector);
   const setActivePanel = useEditorStore((s) => s.setActivePanel);
   const activePanel = useEditorStore((s) => s.activePanel);
   const isSidebarCollapsed = useEditorStore((s) => s.sidebarCollapsed);
   const workspaceLayout = useEditorStore((s) => s.workspaceLayout);
+  const libraryPaneWidth = useEditorStore((s) => s.libraryPaneWidth);
+  const inspectorPaneWidth = useEditorStore((s) => s.inspectorPaneWidth);
   const stagePaneWidth = useEditorStore((s) => s.stagePaneWidth);
-  const selectedClipId = useEditorStore((s) => s.selectedClipId);
-  const selectedTransitionId = useEditorStore((s) => s.selectedTransitionId);
-  const selectClip = useEditorStore((s) => s.selectClip);
-  const selectTransition = useEditorStore((s) => s.selectTransition);
+  const timelinePaneHeight = useEditorStore((s) => s.timelinePaneHeight);
+  const isInspectorCollapsed = useEditorStore((s) => s.inspectorCollapsed);
+  const selectedClipId = useSessionStore((s) => getSelectedClipId(s.session));
+  const selectedTransitionId = useSessionStore((s) => getSelectedTransitionId(s.session));
+  const clearSelection = useSessionStore((s) => s.clearSelection);
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
   const removeClip = useProjectStore((s) => s.removeClip);
+  const removeClips = useProjectStore((s) => s.removeClips);
   const removeTransition = useProjectStore((s) => s.removeTransition);
   const canUndo = useProjectStore((s) => s.past.length > 0);
   const canRedo = useProjectStore((s) => s.future.length > 0);
-  const selectedSubtitleId = useEditorStore((state) => state.selectedSubtitleId);
+  const selectedSubtitleId = useSessionStore((s) => getSelectedSubtitleSegmentId(s.session));
   const removeSubtitle = useSubtitleStore((state) => state.remove);
   const subtitleCanUndo = useSubtitleStore((state) => state.past.length > 0);
   const subtitleCanRedo = useSubtitleStore((state) => state.future.length > 0);
@@ -78,7 +91,7 @@ function EditorShellContent() {
   const nudgeSelectedSubtitle = (deltaX: number, deltaY: number) => {
     const subtitleState = useSubtitleStore.getState();
     const selected = subtitleState.document.segments.find(
-      (segment) => segment.id === useEditorStore.getState().selectedSubtitleId,
+      (segment) => segment.id === getSelectedSubtitleSegmentId(useSessionStore.getState().session),
     );
     if (!selected) return;
     const style = resolveSubtitleStyle(subtitleState.document.defaultStyle, selected.style);
@@ -136,12 +149,16 @@ function EditorShellContent() {
         disabled:
           selectedClipId === null && selectedTransitionId === null && selectedSubtitleId === null,
         run: () => {
-          if (selectedClipId) {
+          const selectedClipIds = getSessionSelectedClipIds(useSessionStore.getState().session);
+          if (selectedClipIds.length > 1) {
+            removeClips(selectedClipIds);
+            clearSelection();
+          } else if (selectedClipId) {
             removeClip(selectedClipId);
-            selectClip(null);
+            clearSelection();
           } else if (selectedTransitionId) {
             removeTransition(selectedTransitionId);
-            selectTransition(null);
+            clearSelection();
           } else if (selectedSubtitleId) {
             removeSubtitle(selectedSubtitleId);
           }
@@ -289,8 +306,7 @@ function EditorShellContent() {
       isSidebarCollapsed,
       selectedClipId,
       selectedTransitionId,
-      selectClip,
-      selectTransition,
+      clearSelection,
       undo,
       redo,
       removeClip,
@@ -307,6 +323,14 @@ function EditorShellContent() {
 
   useShortcuts(shortcuts, true);
 
+  const workspaceGrid = workspaceGridTemplate(workspaceLayout, {
+    libraryPaneWidth,
+    inspectorPaneWidth,
+    stagePaneWidth,
+    isLibraryCollapsed: isSidebarCollapsed,
+    isInspectorCollapsed,
+  });
+
   return (
     <div className="vd-app-shell bg-surface-base text-text-primary flex h-screen flex-col overflow-hidden">
       <ProjectPersistenceController />
@@ -314,15 +338,17 @@ function EditorShellContent() {
       <CommandPalette />
       <TopToolbar />
       <div
-        className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_16rem]"
+        className="grid min-h-0 flex-1"
         data-workspace-layout={workspaceLayout}
         style={{
-          gridTemplateAreas: workspaceGridTemplate(workspaceLayout, stagePaneWidth).areas,
-          gridTemplateColumns: workspaceGridTemplate(workspaceLayout, stagePaneWidth).columns,
+          gridTemplateAreas: workspaceGrid.areas,
+          gridTemplateColumns: workspaceGrid.columns,
+          gridTemplateRows: workspaceTimelineRows(timelinePaneHeight),
         }}
       >
-        <div className="min-h-0 overflow-hidden" style={{ gridArea: 'library' }}>
+        <div className="relative min-h-0 min-w-0" style={{ gridArea: 'library' }}>
           <LeftSidebar />
+          {!isSidebarCollapsed && <WorkspacePaneSplitter pane="library" />}
         </div>
         <div
           className={
@@ -338,10 +364,14 @@ function EditorShellContent() {
           {workspaceLayout === 'short-video' && <StageSplitter />}
           <PreviewCanvas />
         </div>
-        <div className="min-h-0 overflow-hidden" style={{ gridArea: 'inspector' }}>
-          <RightInspector />
+        <div className="relative min-h-0 min-w-0" style={{ gridArea: 'inspector' }}>
+          <RightInspector fillAvailableWidth={workspaceLayout === 'video'} />
+          {workspaceLayout === 'video' && !isInspectorCollapsed && (
+            <WorkspacePaneSplitter pane="inspector" />
+          )}
         </div>
-        <div className="min-h-0 min-w-0" style={{ gridArea: 'timeline' }}>
+        <div className="relative min-h-0 min-w-0" style={{ gridArea: 'timeline' }}>
+          <TimelinePaneSplitter />
           <TimelinePanel />
         </div>
       </div>
